@@ -4,8 +4,8 @@
 """
 import datetime
 import sys
+import os
 import re
-import copy
 from subprocess import call, Popen, PIPE, check_output
 import datetime
 import time
@@ -15,9 +15,22 @@ import shlex
 
 TimeMachineVersion = 1
 
+
+class Tools:
+    @staticmethod
+    def getNestedDictValue(dictionary, *keys):
+        pointer = dictionary
+        for key in keys:
+            if key not in pointer:
+                return None
+            else:
+                pointer = pointer[key]
+        return pointer
+
 class Console:
     # staticvariable
     _checked_ssh_hosts = {}
+    _checked_dest_folders = {}
 
     @staticmethod
     def call_shell(code):
@@ -30,10 +43,32 @@ class Console:
         except OSError as e:
             print("Execution failed:", e, file=sys.stderr)
 
+    @staticmethod
+    def check_dest_folder(dest, dest_host):
+        """
+        Убедиться в том, что папка назначения существует.
+        Пытается создать папку со всеми родительскими папками
+        :param dest: Папка
+        :param dest_host: SSH-хост, или Пользователь@Хост
+        """
+        Console.check_ssh_or_throw(dest_host)
+        if dest_host in Console._checked_dest_folders:
+            if dest in Console._checked_dest_folders:
+                return
+        else:
+            Console._checked_dest_folders[dest_host] = {}
+        cmd = Console.list2cmdline(["mkdir", "-p", dest])
+        if dest_host:
+            cmd = "ssh " + dest_host + " " + Console.list2cmdline([cmd])
+        print("checking folder by command: " + cmd)
+        Console.call_shell(cmd)
+        Console._checked_dest_folders[dest_host][dest] = True
+
     @classmethod
     def write_file(cls, filename, content, sshhost=""):
         if sshhost:
             cls.check_ssh_or_throw(sshhost)
+        cls.check_dest_folder(os.path.dirname(filename), sshhost)
         data = content.encode("UTF-8")
         codes = ""
         for byte in data:
@@ -41,7 +76,7 @@ class Console:
         cmd = "bash -c 'echo -e \"" + codes + "\" > " + cls.list2cmdline([filename]) + " ' "
         if sshhost:
             cmd = "ssh " + sshhost + " " + cls.list2cmdline([cmd])
-        print("Writing file " + filename + (" on ssh:" + sshhost) if sshhost else " locally")
+        print("Writing file " + filename + ((" on ssh:" + sshhost) if sshhost else " locally"))
         print("Command: " + cmd)
         cls.call_shell_and_return(cmd)
 
@@ -221,52 +256,113 @@ class Mysql:
             data = (p.before).decode("UTF-8")
             raise Exception("Error while calling mysql: " + data)
 
-    def dump_dbs(self, dbs, root_folder, use_update_time=True):
+    def dump_dbs(self, dbs, root_folder, force_dump_intact=False):
+
+        old_dump_info = self.get_old_dump_info(root_folder)
+
+        def dump_params(filename, tbl, db, save_data, save_structure):
+            table_update_date = self.get_table_change_date(db, tbl)
+
+            base_filename = os.path.basename(filename)
+
+            table_old_update_date = Tools.getNestedDictValue(old_dump_info, db, tbl, base_filename)
+
+            if table_old_update_date == table_update_date and not force_dump_intact:
+                return None
+
+            param_array = []
+
+            if not save_data:
+                param_array.append("--no-data")
+
+            if not save_structure:
+                param_array.append("--no-create-info")
+
+            param_array.append("--add-drop-table"),
+
+            param_array += [db, tbl]
+            params = {
+                "options":" -r " + Console.list2cmdline([filename]) + " " + Console.list2cmdline(param_array),
+                "cmd_after":("echo -e '-- LTMINFO: TMVERSION:#{version}# " +
+                                    " DB:#{db}#" +
+                                    " TBL:#{tbl}#" +
+                                    " TABLEUPDATEDATE:#{date}#' >> {filename}").format(
+                                        date=table_update_date,
+                                        filename=filename,
+                                        version=TimeMachineVersion,
+                                        tbl=tbl,
+                                        db=db
+                )
+            }
+            return params
+
+        def call_dump(filename, tbl, db, save_data, save_structure):
+            params = dump_params(filename, tbl, db, save_data, save_structure)
+
+            if params is None:
+                print("Bypassing table " + tbl + " from database " + db)
+            else:
+                self.call_dump(**params)
+
         Console.check_ssh_or_throw(self.sshhost)
+
         for db in dbs:
             folder = root_folder + "/" + db
-            Rsync.check_dest_folder(folder, self.sshhost)
+            Console.check_dest_folder(folder, self.sshhost)
 
             for tbl in dbs[db]:
-                table_update_date = self.get_table_change_date(db, tbl)
+                call_dump(folder + "/" + tbl + ".structure.sql", tbl, db, False, True)
+                call_dump(folder + "/" + tbl + ".data.sql", tbl, db, True, False)
 
-                filename = folder + "/" + tbl + ".structure.sql"
-                self.call_dump(" -r " + Console.list2cmdline([filename]) + " " + Console.list2cmdline(
-                        [
-                            "--no-data",
-                            "--add-drop-table",
-                            db,
-                            tbl
-                        ]),
-                        cmd_after=("echo -e '-- TMVERSION: #{version}#\\n" +
-                                            "-- DB: #{db}#\\n" +
-                                            "-- TBL: #{tbl}#\\n" +
-                                            "-- TABLEUPDATEDATE: #{date}#' >> {filename}").format(
-                                                date=table_update_date,
-                                                filename=filename,
-                                                version=TimeMachineVersion,
-                                                tbl=tbl,
-                                                db=db
-                                   )
-                )
-                filename = folder + "/" + tbl + ".data.sql"
-                self.call_dump(" -r " + Console.list2cmdline([filename]) + " " + Console.list2cmdline(
-                        [
-                            "--no-create-info",
-                            db,
-                            tbl
-                        ]),
-                        cmd_after=("echo -e '-- TMVERSION: #{version}#\\n" +
-                                            "-- DB: #{db}#\\n" +
-                                            "-- TBL: #{tbl}#\\n" +
-                                            "-- TABLEUPDATEDATE: #{date}#' >> {filename}").format(
-                                                date=table_update_date,
-                                                filename=filename,
-                                                version=TimeMachineVersion,
-                                                tbl=tbl,
-                                                db=db
-                                            )
-                )
+    def get_old_dump_info(self, folder):
+        old_info = {}
+
+        bash_file = folder + "/old_dump_info.sh"
+
+        text = """#!/bin/bash
+        FOLDER="%folder%"
+        cd $FOLDER
+        IFS=$'\\n'
+        FILES=`find -name "*.sql"`
+        NUM=`echo "$FILES" | wc -l`
+        for FILE in $FILES
+        do
+            INFO=`tail -n2 $FILE | grep -e LTMINFO:`
+            if [ -n "$INFO" ]
+            then
+                echo -n "INFO: $INFO"
+                FILENAME=`basename $FILE`
+                echo " FILE:#$FILENAME#"
+            fi
+        done
+        IFS=" "
+        echo "Done"
+        """.replace("%folder%", folder)
+
+        Console.write_file(bash_file, text, self.sshhost)
+
+        cmd = " time bash " + bash_file
+        if self.sshhost:
+             cmd = "ssh " + self.sshhost + " " + cmd
+
+        result = Console.call_shell_and_return(cmd).decode("UTF-8").split("\n")
+        reg = re.compile("INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# FILE:#(?P<FILE>[^#]+)#")
+        for line in result:
+            matches = reg.search(line)
+            if matches:
+                d = matches.groupdict()
+                db = d['DB']
+                tbl = d['TBL']
+                update_date = d['TABLEUPDATEDATE']
+                file = d['FILE']
+                version = d['TMVERSION']
+                if int(version) == TimeMachineVersion:
+                    if db not in old_info:
+                        old_info[db] = {}
+                    if tbl not in old_info[db]:
+                        old_info[db][tbl] = {}
+                    old_info[db][tbl][file] = update_date
+        return old_info
 
     def get_dbs_and_tbls(self):
         Console.check_ssh_or_throw(self.sshhost)
@@ -291,36 +387,32 @@ class Mysql:
         return dbs
 
     def filter_dbs_and_tbls(self, dbs, filters):
+
         selected_dbs = {}
         for rule in filters:
             if len(rule) != 3:
                 raise Exception("filters Rule must be a list with 3 items")
-            action, db, tables_raw = rule
+
+            action, db_raw, tables_raw = rule
+
             if action not in ["include", "exclude"]:
                 raise Exception("first element of filters Rule must be 'include' or 'exclude'")
-            if type(db).__name__ not in ["str", "SRE_Pattern"]:
-                raise Exception(
-                        "second element of filters Rule must be 'str' or 're.compile', but it's: " + type(db).__name__)
-            if type(db).__name__ == "str":
-                if db == "*":
-                    db = re.compile(".*")
-                else:
-                    db = re.compile("^" + db + "$")
+
+            assert(type(db_raw).__name__ == "str")
+
+            if (db_raw == "*"):
+                db_raw = ".*"
+            db = re.compile("^" + db_raw + "$")
+
             if type(tables_raw).__name__ != "list":
                 tables_raw = [tables_raw]
 
             tables = []
             for table in tables_raw:
-                if type(table) == str:
-                    if table == "*":
-                        tables.append(re.compile(".*"))
-                    else:
-                        tables.append(re.compile("^" + table + "$"))
-                elif type(table).__name__ == "SRE_Pattern":
-                    tables.append(table)
-                else:
-                    raise Exception(
-                            "tables must be 'str' or 're.compile', but one of tables' type:" + type(table).__name__)
+                assert(type(table).__name__ == "str")
+                if table == "*":
+                    table = ".*"
+                tables.append(re.compile("^" + table + "$"))
 
             if action == "include":
                 dbs_to_go = dbs
@@ -404,19 +496,26 @@ class Rsync:
         self.multipliers = {"K": 1024, "M": 1024 * 1024, "G": 1024 * 1024 * 1024}
 
     @staticmethod
-    def check_dest_folder(dest, dest_host):
-        """
-        Убедиться в том, что папка назначения существует.
-        Пытается создать папку со всеми родительскими папками
-        :param dest: Папка
-        :param dest_host: SSH-хост, или даже Пользователь@Хост
-        """
-        Console.check_ssh_or_throw(dest_host)
-        cmd = Console.list2cmdline(["mkdir", "-p", dest])
-        if dest_host:
-            cmd = "ssh " + dest_host + " " + Console.list2cmdline([cmd])
-        print("checking folder by command: " + cmd)
-        Console.call_shell(cmd)
+    def default_callback(data):
+        if data['type'] == "progress":
+            try:
+                speed = data['speed']
+                if speed > 1024**3:
+                    data['speed'] = str(round(speed / (1024**3), 2)) + "GB/s"
+                elif speed > 1024**2:
+                    data['speed'] = str(round(speed / (1024**2), 2)) + "MB/s"
+                elif speed > 1024:
+                    data['speed'] = str(round(speed / (1024), 2)) + "KB/s"
+                print("Progress:{progress}%, checked {ir_chk_top} / {ir_chk_bottom}, speed: {speed}".format(**data))
+            except Exception as e:
+                print(data)
+                print(e)
+        elif data['type'] == "path":
+            print("Last copied file: " + data['path'])
+        elif data['type'] == "message":
+            print("Message: " + data['message'])
+        else:
+            print(data)
 
     def get_exists_progress_folders(self, dest, dest_host, tmp_dir="in-progress-"):
         """
@@ -538,7 +637,7 @@ class Rsync:
             "cur_tmp_dir": "in-progress-" + date
         }
 
-        self.check_dest_folder(dest['path'], dest['host'])
+        Console.check_dest_folder(dest['path'], dest['host'])
 
         self.use_exists_progress_folders(dest['path'], dest['host'], params['cur_tmp_dir'])
 
@@ -558,3 +657,56 @@ class Rsync:
                 self.go(raw_cmd, callback)
             else:
                 Console.call_shell(raw_cmd)
+
+
+def go(variants, rsync_callback=Rsync.default_callback):
+
+    def print_asterisked(text):
+        print("**" + "*" * len(text) + "**")
+        print("* " + text + " *")
+        print("**" + "*" * len(text) + "**")
+
+    assert(type(variants)==dict)
+    summ_time = 0
+    for variant_name in variants:
+
+        variant = copy.deepcopy(variants[variant_name])
+
+        print_asterisked("Backuping variant `" + variant_name + "`")
+
+        start_time = time.time()
+        if "mysqldump" in variant:
+            mysqldump = variant['mysqldump']
+            assert(type(mysqldump) == dict)
+            assert("user" in mysqldump)
+            assert("password" in mysqldump)
+            assert("sshhost" in mysqldump)
+            assert("filters" in mysqldump)
+            del variant['mysqldump']
+
+            mysql = Mysql(mysqldump['user'], mysqldump['password'], mysqldump['sshhost'])
+
+            dbs = mysql.filter_dbs_and_tbls(
+                mysql.get_dbs_and_tbls(),
+                mysqldump['filters']
+            )
+
+            print_asterisked("Dumping mysql dbs for variant `" + variant_name + "`")
+
+            mysql.dump_dbs(dbs, mysqldump['folder'])
+
+            print_asterisked("Dumping mysql dbs for variant `" + variant_name + "` is done!")
+
+        print_asterisked("Rsync is started for variant `" + variant_name + "`")
+
+        rsync = Rsync()
+
+        rsync.timemachine(callback=rsync_callback, **variant)
+
+        end_time = time.time()
+        dtime = end_time - start_time
+        summ_time += dtime
+
+        print_asterisked("Rsync for variant `" + variant_name + "` is done, time is:" + str(dtime))
+
+    print_asterisked("Backup is done, full time is:" + str(summ_time))
