@@ -80,8 +80,8 @@ variants = {
     },
 }
 
-#variants = {"home_mihanentalpo":variants["home_mihanentalpo"]}
-variants = {"local_mysql":variants["local_mysql"]}
+variants = {"home_mihanentalpo":variants["home_mihanentalpo"]}
+#variants = {"local_mysql":variants["local_mysql"]}
 
 backup.go(variants)
 
