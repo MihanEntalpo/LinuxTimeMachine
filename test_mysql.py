@@ -10,13 +10,11 @@ console = backup.Console()
 db_conf = [
     ["include", "mihanentalpo_me", re.compile(".*")],
     ["exclude", "mihanentalpo_me", ["wp_comments"]],
-    ["include", re.compile(".*"), ["af_goods"]]
+    ["include", "*", ["af_goods"]]
 ]
-
 
 mysql = backup.Mysql(**passwords.mihanentalpo_me_mysql)
 #mysql = backup.Mysql(**passwords.local_mysql)
-
 
 dbs = mysql.get_dbs_and_tbls()
 
