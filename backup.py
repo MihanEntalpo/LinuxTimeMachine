@@ -54,7 +54,7 @@ class Console:
         Console.check_ssh_or_throw(dest_host)
         if dest_host in Console._checked_dest_folders:
             if dest in Console._checked_dest_folders:
-                return
+                return True
         else:
             Console._checked_dest_folders[dest_host] = {}
         cmd = Console.list2cmdline(["mkdir", "-p", dest])
@@ -300,15 +300,15 @@ class Mysql:
             params = dump_params(filename, tbl, db, save_data, save_structure)
 
             if params is None:
-                print("Bypassing table " + tbl + " from database " + db)
+                print("Bypassing table " + tbl + " from database " + db + " (data not changed)")
             else:
+                Console.check_dest_folder(folder, self.sshhost)
                 self.call_dump(**params)
 
         Console.check_ssh_or_throw(self.sshhost)
 
         for db in dbs:
             folder = root_folder + "/" + db
-            Console.check_dest_folder(folder, self.sshhost)
 
             for tbl in dbs[db]:
                 call_dump(folder + "/" + tbl + ".structure.sql", tbl, db, False, True)
