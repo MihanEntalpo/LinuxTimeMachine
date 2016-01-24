@@ -19,6 +19,20 @@ TimeMachineVersion = 1
 class Tools:
     @staticmethod
     def getNestedDictValue(dictionary, *keys):
+        """
+        Функция получает из вложенного dict-а элемент, либо None.
+        Например, у нас есть данные о фруктах в виде вложенных dict-ов:
+        a = {"fruits": {"apple": {"color":"red", "price":"100"}, "orange": {"color":"orange", "proce":50}}}
+        Получить цену яблока:
+        apple_price = Tools.getNestedDictValue(a, "fruits", "apple", "price")
+        Получить данные об апельсине:
+        orange_info = Tools.getNestedDictValue(a, "fruits", "orange")
+        А вот такой запрос не вызовет ошибку, а просто вернёт None (так как арбуза у нас нет):
+        watermelon_price = Tools.getNestedDictValue(a, "fruits", "watermelon", "price")
+        :param dictionary: вложенный словарь dict
+        :param keys: массив ключей, последовательно выбираемых из вложенных dict-ов
+        :return:
+        """
         pointer = dictionary
         for key in keys:
             if key not in pointer:
@@ -31,6 +45,20 @@ class Console:
     # staticvariable
     _checked_ssh_hosts = {}
     _checked_dest_folders = {}
+
+    @staticmethod
+    def rm(path, host=""):
+        """
+        Удаляет файл на локальном или удалённом хосте. Один файл!
+        :param path: str путь к файлу
+        :param host: str ssh-хост
+        :return:
+        """
+        cmd = Console.list2cmdline(["rm", path])
+        if host:
+            cmd = "ssh " + host + " " + Console.list2cmdline([cmd])
+        print("Command: " + cmd)
+        Console.call_shell(cmd)
 
     @staticmethod
     def call_shell(code):
@@ -47,13 +75,14 @@ class Console:
     def check_dest_folder(dest, dest_host):
         """
         Убедиться в том, что папка назначения существует.
-        Пытается создать папку со всеми родительскими папками
+        Пытается создать папку со всеми родительскими папками.
+        Кэширует результат выполнения, так что можно вызывать сколько угодно, сработает только первый
         :param dest: Папка
         :param dest_host: SSH-хост, или Пользователь@Хост
         """
         Console.check_ssh_or_throw(dest_host)
         if dest_host in Console._checked_dest_folders:
-            if dest in Console._checked_dest_folders:
+            if dest in Console._checked_dest_folders[dest_host]:
                 return True
         else:
             Console._checked_dest_folders[dest_host] = {}
@@ -66,6 +95,13 @@ class Console:
 
     @classmethod
     def write_file(cls, filename, content, sshhost=""):
+        """
+        Записать файл на локальный или удалённый хост.
+        Используется например для записи bash-скриптов на удалённый сервер
+        :param filename: str имя файла
+        :param content: str контент файла
+        :param sshhost: str SSH-хост
+        """
         if sshhost:
             cls.check_ssh_or_throw(sshhost)
         cls.check_dest_folder(os.path.dirname(filename), sshhost)
@@ -77,11 +113,16 @@ class Console:
         if sshhost:
             cmd = "ssh " + sshhost + " " + cls.list2cmdline([cmd])
         print("Writing file " + filename + ((" on ssh:" + sshhost) if sshhost else " locally"))
-        print("Command: " + cmd)
+        #print("Command: " + cmd)
         cls.call_shell_and_return(cmd)
 
     @classmethod
     def check_ssh_or_throw(cls, host):
+        """
+        Проверить SSH-хост, и если он не работает - бросить исключение
+        :param host: str хост
+        :return: Boolean, как правило True
+        """
         cssh = cls.check_ssh(host)
         if type(cssh) == Exception:
             raise Exception
@@ -362,6 +403,9 @@ class Mysql:
                     if tbl not in old_info[db]:
                         old_info[db][tbl] = {}
                     old_info[db][tbl][file] = update_date
+
+        Console.rm(bash_file, self.sshhost)
+
         return old_info
 
     def get_dbs_and_tbls(self):
