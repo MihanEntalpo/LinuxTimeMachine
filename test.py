@@ -5,7 +5,8 @@ import time
 import passwords
 
 backup_root = "/home/backuper/backup"
-machine_backup_root = "/home/backuper/backup/machines/mihanlenovo"
+machine_backup_root = backup_root + "/machines/mihanlenovo"
+mihanentalpo_me_backup_root = backup_root + "/machines/mihanentalpo.me"
 backup_host = "backuper@terrarian"
 
 variants = {
@@ -78,9 +79,34 @@ variants = {
             ]
         }
     },
+    "mihanentalpo.me-files": {
+        "src": {"path": "/var/www", "host":"mihanentalpo.me"},
+        "dest": {"path": "/home/data/mihanentalpo.me/backup/files", "host":""},
+        "exclude": [
+            "*.log", "*.tar", "*.tar.gz", "*.zip", "*.sql",
+            "www/2995575.ru/www/wp-content/cache",
+        ]
+    },
+    "mihanentalpo.me-mysql": {
+        "src": {"path": "/home/mihanentalpo/mysql-backup", "host":"mihanentalpo.me"},
+        "dest": {"path": "/home/data/mihanentalpo.me/backup/database", "host":""},
+        "mysqldump": {
+            "user": passwords.mihanentalpo_me_mysql['user'], "password": passwords.mihanentalpo_me_mysql['password'],
+            "sshhost" : passwords.mihanentalpo_me_mysql['sshhost'],
+            "folder": "/home/mihanentalpo/mysql-backup",
+            "filters": [
+                ["include", "*", "*"],
+            ]
+        }
+    }
+
 }
 
-variants = {"home_mihanentalpo":variants["home_mihanentalpo"]}
+variants = {
+    #"mihanentalpo.me-files":variants["mihanentalpo.me-files"],
+    "mihanentalpo.me-mysql":variants["mihanentalpo.me-mysql"]
+}
+#variants = {"home_mihanentalpo":variants["home_mihanentalpo"]}
 #variants = {"local_mysql":variants["local_mysql"]}
 
 backup.go(variants)
