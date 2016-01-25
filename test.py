@@ -103,7 +103,7 @@ variants = {
 }
 
 variants = {
-    #"mihanentalpo.me-files":variants["mihanentalpo.me-files"],
+    "mihanentalpo.me-files":variants["mihanentalpo.me-files"],
     "mihanentalpo.me-mysql":variants["mihanentalpo.me-mysql"]
 }
 #variants = {"home_mihanentalpo":variants["home_mihanentalpo"]}
