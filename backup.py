@@ -12,6 +12,10 @@ import time
 import pexpect
 import copy
 import shlex
+import json
+import yaml
+import types
+from io import StringIO
 
 TimeMachineVersion = 1
 
@@ -41,6 +45,66 @@ class Tools:
                 pointer = pointer[key]
         return pointer
 
+
+class Conf:
+    @staticmethod
+    def read_conf_dir(dir_path):
+        files = [dir_path + "/" + file for file in os.listdir(dir_path) if re.search("\.(py3?|ya?ml|json)$", file)]
+        return Conf.read_conf_file(files)
+
+    @staticmethod
+    def read_conf_files(files):
+        data = {}
+        assert isinstance(files, (list, set))
+        for file in files:
+            file_data = Conf.read_conf_file(file)
+            data.update(file_data)
+        return data
+
+    @staticmethod
+    def read_py_conf_file(file):
+        with open(file, "r") as f:
+            code = f.read()
+        new_module = types.ModuleType("new_temporary_module")
+        exec(code, new_module.__dict__)
+        if "variants" in new_module.__dict__:
+            return new_module.variants
+        else:
+            raise Exception("File {} should contain 'variants' variable, but it's not.".format(file))
+
+    @staticmethod
+    def read_conf_file(filename):
+        regs = {
+            "py": ".*\.py3?$",
+            "json": ".*\.json$",
+            "yaml": ".*\.ya?ml$"
+        }
+
+        filetype = None
+        for curtype in regs:
+            if re.search(regs[curtype], filename):
+                filetype = curtype
+                break
+        if filetype is None:
+            raise Exception("Config file {} must have extension .py, .json, .yaml or .yml".format(filename))
+        content = ""
+        with open(filename, "r") as f:
+            content = f.read()
+
+        conf = {}
+
+        if content:
+            if filetype == "py":
+                conf = Conf.read_py_conf_file(filename)
+            elif filetype == "json":
+                conf = json.loads(content)
+            elif filetype == "yaml":
+                conf = yaml.load(StringIO(content))
+
+        return conf
+
+
+
 class Console:
     # staticvariable
     _checked_ssh_hosts = {}
@@ -54,11 +118,28 @@ class Console:
         :param host: str ssh-хост
         :return:
         """
-        cmd = Console.list2cmdline(["rm", path])
-        if host:
-            cmd = "ssh " + host + " " + Console.list2cmdline([cmd])
+        cmd = Console.cmd(Console.list2cmdline(["rm", path]), host)
         print("Command: " + cmd)
         Console.call_shell(cmd)
+
+    @staticmethod
+    def mv(src, dest, host=""):
+        """
+        Выполняет команду "mv" на локальном или на удалённом хосте
+        :param src: исходное имя
+        :param dest: конечное имя
+        :param host: пользователь@хост
+        """
+        cmd = Console.cmd(
+            Console.list2cmdline(["mv", src, dest]), host
+        )
+        Console.call_shell(cmd)
+
+    @staticmethod
+    def cmd(cmd, sshhost=""):
+        if sshhost:
+            cmd = "ssh " + sshhost + " " + Console.list2cmdline([cmd])
+        return cmd
 
     @staticmethod
     def call_shell(code):
@@ -86,9 +167,7 @@ class Console:
                 return True
         else:
             Console._checked_dest_folders[dest_host] = {}
-        cmd = Console.list2cmdline(["mkdir", "-p", dest])
-        if dest_host:
-            cmd = "ssh " + dest_host + " " + Console.list2cmdline([cmd])
+        cmd = Console.cmd(Console.list2cmdline(["mkdir", "-p", dest]), dest_host)
         print("checking folder by command: " + cmd)
         Console.call_shell(cmd)
         Console._checked_dest_folders[dest_host][dest] = True
@@ -109,9 +188,7 @@ class Console:
         codes = ""
         for byte in data:
             codes = codes + "\\x" + hex(byte)[2:]
-        cmd = "bash -c 'echo -e \"" + codes + "\" > " + cls.list2cmdline([filename]) + " ' "
-        if sshhost:
-            cmd = "ssh " + sshhost + " " + cls.list2cmdline([cmd])
+        cmd = Console.cmd("bash -c 'echo -e \"" + codes + "\" > " + cls.list2cmdline([filename]) + " ' ", sshhost)
         print("Writing file " + filename + ((" on ssh:" + sshhost) if sshhost else " locally"))
         #print("Command: " + cmd)
         cls.call_shell_and_return(cmd)
@@ -207,11 +284,7 @@ class Mysql:
         pexvs["mysql_pass"] = "Enter password:"
         pexvs["eof"] = pexpect.EOF
 
-        cmd = Console.list2cmdline(["mysql", "-u" + self.user, "-p", "-e", query])
-
-        if self.sshhost:
-            Console.check_ssh_or_throw(self.sshhost)
-            cmd = "ssh " + self.sshhost + " " + Console.list2cmdline([cmd])
+        cmd = Console.cmd(Console.list2cmdline(["mysql", "-u" + self.user, "-p", "-e", query]), self.sshhost)
 
         p = pexpect.spawn(cmd)
         res = Console.p_expect(p, pexvs, ssh=(self.sshhost != ""))
@@ -271,11 +344,9 @@ class Mysql:
         if cmd_after:
             cmds.append(cmd_after)
 
-        cmd = "/bin/bash -c " + Console.list2cmdline([" && ".join(cmds)])
+        cmd = Console.cmd("/bin/bash -c " + Console.list2cmdline([" && ".join(cmds)]), self.sshhost)
 
-        if self.sshhost:
-            Console.check_ssh_or_throw(self.sshhost)
-            cmd = "ssh " + self.sshhost + " " + Console.list2cmdline([cmd])
+        Console.check_ssh_or_throw(self.sshhost)
 
         print(cmd)
 
@@ -382,9 +453,7 @@ class Mysql:
 
         Console.write_file(bash_file, text, self.sshhost)
 
-        cmd = " time bash " + bash_file
-        if self.sshhost:
-             cmd = "ssh " + self.sshhost + " " + cmd
+        cmd = Console.cmd(" bash '" + bash_file + "'", self.sshhost)
 
         result = Console.call_shell_and_return(cmd).decode("UTF-8").split("\n")
         reg = re.compile("INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# FILE:#(?P<FILE>[^#]+)#")
@@ -431,7 +500,6 @@ class Mysql:
         return dbs
 
     def filter_dbs_and_tbls(self, dbs, filters):
-
         selected_dbs = {}
         for rule in filters:
             if len(rule) != 3:
@@ -482,7 +550,6 @@ class Rsync:
     """
     Класс, предназначенный для запуска процесса резервного копирования
     """
-
     def __init__(self):
         self.line_parsers = [
             {
@@ -571,9 +638,7 @@ class Rsync:
 
         """
         Console.check_ssh_or_throw(dest_host)
-        cmd = "find '{dest}' -name {tmp_dir}* -maxdepth 1"
-        if dest_host:
-            cmd = 'ssh {dest_host} "' + cmd + '"'
+        cmd = Console.cmd("find '{dest}' -name {tmp_dir}* -maxdepth 1", dest_host)
         cmd = cmd.format(dest=dest, dest_host=dest_host, tmp_dir=tmp_dir)
         try:
             print(cmd)
@@ -582,18 +647,6 @@ class Rsync:
         except Exception as e:
             res = ""
         return res
-
-    def mv(self, src, dest, host=""):
-        """
-        Выполняет команду "mv" на локальном или на удалённом хосте
-        :param src: исходное имя
-        :param dest: конечное имя
-        :param host: пользователь@хост
-        """
-        cmd = "mv '" + src + "' '" + dest + "'"
-        if host:
-            cmd = "ssh " + host + " \"" + cmd + "\""
-        Console.call_shell(cmd)
 
     def use_exists_progress_folders(self, dest_path, dest_host, cur_dir, tmp_dir="in-progress-"):
         """
@@ -613,8 +666,8 @@ class Rsync:
             if len(folders):
                 for folder in folders:
                     renamed = "old-" + folder
-                    self.mv(dest_path + "/" + folder, dest_path + "/" + renamed, dest_host)
-            self.mv(dest_path + "/" + last_folder, dest_path + "/" + cur_dir, dest_host)
+                    Console.mv(dest_path + "/" + folder, dest_path + "/" + renamed, dest_host)
+            Console.mv(dest_path + "/" + last_folder, dest_path + "/" + cur_dir, dest_host)
 
     def parse_line(self, line, callback):
         """
@@ -690,8 +743,8 @@ class Rsync:
                 "rsync -axv --info=progress2 --delete {exclude_str} --link-dest='{latest_dir}' '{src_full}' '{dest_full}/{cur_tmp_dir}'",
                 True),
             ("{cmd_pre} mv '{dest_path}/{cur_tmp_dir}' '{dest_path}/{date}' {cmd_post}", False),
-            ("{cmd_pre} rm -f '{dest_path}'/Latest {cmd_post}", False),
-            ("{cmd_pre} ln -s '{dest_path}/{date}' '{dest_path}'/Latest {cmd_post}", False)
+            ("{cmd_pre} rm -f '{dest_path}/Latest' {cmd_post}", False),
+            ("{cmd_pre} ln -s '{dest_path}/{date}' '{dest_path}/Latest' {cmd_post}", False)
         ]
 
         for (cmd, is_rsync) in cmds:
