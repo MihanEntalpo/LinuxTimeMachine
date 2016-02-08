@@ -35,7 +35,7 @@ variants = {
     "home_data": {
         "src": {"path":"/home/data", "host":""},
         "dest": {"path":machine_backup_root + "/home/data", "host":backup_host},
-        "exclude": []
+        "exclude": ["data/root_fs_pre_reinst.fsa"]
     },
     "home_mihanentalpo_music": {
         "src": {"path":"/home/mihanentalpo/Music", "host":""},
@@ -99,15 +99,14 @@ variants = {
             ]
         }
     }
-
 }
 
-variants = {
-    "mihanentalpo.me-files":variants["mihanentalpo.me-files"],
-    "mihanentalpo.me-mysql":variants["mihanentalpo.me-mysql"]
-}
-#variants = {"home_mihanentalpo":variants["home_mihanentalpo"]}
-#variants = {"local_mysql":variants["local_mysql"]}
 
-backup.go(variants)
+pVariants = {}
+
+# Выберем только определённые варианты
+for v in ["home_mihanentalpo", "local_mysql"]:#, "home_data"]:
+    pVariants[v] = variants[v]
+
+backup.go(pVariants)
 
