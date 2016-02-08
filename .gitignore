@@ -1,4 +1,6 @@
 __pycache__
 .idea
 passwords.py
+confs/*.py
+confs/*.json
 
