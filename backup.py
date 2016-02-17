@@ -138,9 +138,9 @@ class Console:
     @staticmethod
     def rm(path, host=""):
         """
-        Удаляет файл на локальном или удалённом хосте. Один файл!
-        :param path: str путь к файлу
-        :param host: str ssh-хост
+        Remove file from local or remote host. Just a single file!
+        :param path: str file path
+        :param host: str ssh-host
         :return:
         """
         cmd = Console.cmd(Console.list2cmdline(["rm", path]), host)
@@ -150,10 +150,10 @@ class Console:
     @staticmethod
     def mv(src, dest, host=""):
         """
-        Выполняет команду "mv" на локальном или на удалённом хосте
-        :param src: исходное имя
-        :param dest: конечное имя
-        :param host: пользователь@хост
+        Call "mv" console command on local or remove host
+        :param src: source name
+        :param dest: destination name
+        :param host: ssh-host
         """
         cmd = Console.cmd(
             Console.list2cmdline(["mv", src, dest]), host
@@ -163,9 +163,9 @@ class Console:
     @staticmethod
     def cmd(cmd, sshhost=""):
         """
-        Заворачивает указанную команду в вызов ssh, или просто возвращает её, если sshhost не задан
-        :param cmd: команда
-        :param sshhost: ssh-хост, в формате user@host.com
+        Wrap console command into ssh call, or just return it, if no sshhost suplied
+        :param cmd: command
+        :param sshhost: ssh-host
         :return:
         """
         if sshhost:
@@ -175,8 +175,8 @@ class Console:
     @staticmethod
     def call_shell(code):
         """
-        Выполнить команду в консоли
-        :param code: Команда
+        Run console command on a local host.
+        :param code: Command
         """
         try:
             retcode = call(code, shell=True)
