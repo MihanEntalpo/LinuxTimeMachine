@@ -29,7 +29,8 @@ variants = {
             "downloads.json", "mihanentalpo/.icedove/6xzgf26z.default/logs/irc",
             "mihanentalpo/.kde/share/apps/RecentDocuments",
             "mihanentalpo/.kde/share/apps/dolphin/view_properties/search",
-            "mihanentalpo/.netbeans/8.0.2/var/filehistory"
+            "mihanentalpo/.netbeans/8.0.2/var/filehistory",
+            "mihanentalpo/git/UnrealEngine/Engine/DerivedDataCache"
         ],
     },
     "home_data": {
@@ -76,7 +77,8 @@ variants = {
             "folder": "/home/var/mysql-backup",
             "filters": [
                 ["include", "*", "*"],
-            ]
+            ],
+            "remove_after_backup": True
         }
     },
     "mihanentalpo.me-files": {
@@ -105,7 +107,7 @@ variants = {
 pVariants = {}
 
 # Выберем только определённые варианты
-for v in ["home_mihanentalpo", "local_mysql"]:#, "home_data"]:
+for v in ["local_mysql"]: #"home_mihanentalpo", "local_mysql", "home_data"]:
     pVariants[v] = variants[v]
 
 backup.go(pVariants)
