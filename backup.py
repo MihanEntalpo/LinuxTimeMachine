@@ -49,11 +49,28 @@ class Tools:
 class Conf:
     @staticmethod
     def read_conf_dir(dir_path):
-        files = [dir_path + "/" + file for file in os.listdir(dir_path) if re.search("\.(py3?|ya?ml|json)$", file)]
-        return Conf.read_conf_file(files)
+        """
+        Считать все конфигурационные файлы из указанной папки.
+        Файлы считываются в алфавитном порядке, и если среди файлов будут одинаковые варианты, они будут прочитаны позднее
+        :param dir_path: Путь к папке
+        :return: dict с объединённой конфигурацией файлов
+        """
+        if (not os.path.exists(dir_path)):
+            print("Configuration folder '{}' doesn't exists".format(dir_path))
+        filenames = [file for file in os.listdir(dir_path) if re.search("\.(py3?|ya?ml|json)$", file)]
+        files = [dir_path + "/" + file for file in sorted(filenames)]
+        if len(files) == 0:
+            print("There are no config files in folder '{}'".format(dir_path))
+        for file in files:
+            return Conf.read_conf_file(file)
 
     @staticmethod
     def read_conf_files(files):
+        """
+        Считывает набор файлов
+        :param files: массив файлов (list или set)
+        :return: dict с объединёнными конфигурациями файлов
+        """
         data = {}
         assert isinstance(files, (list, set))
         for file in files:
@@ -70,10 +87,18 @@ class Conf:
         if "variants" in new_module.__dict__:
             return new_module.variants
         else:
-            raise Exception("File {} should contain 'variants' variable, but it's not.".format(file))
+            pass
+            #raise Exception("File {} should contain 'variants' variable, but it's not.".format(file))
 
     @staticmethod
     def read_conf_file(filename):
+        """
+        Считывает один конфигурационный файл
+        :param filename: имя файла
+        :return: dict с настройками из файла
+        """
+        assert(filename, str)
+
         regs = {
             "py": ".*\.py3?$",
             "json": ".*\.json$",
@@ -137,12 +162,22 @@ class Console:
 
     @staticmethod
     def cmd(cmd, sshhost=""):
+        """
+        Заворачивает указанную команду в вызов ssh, или просто возвращает её, если sshhost не задан
+        :param cmd: команда
+        :param sshhost: ssh-хост, в формате user@host.com
+        :return:
+        """
         if sshhost:
             cmd = "ssh " + sshhost + " " + Console.list2cmdline([cmd])
         return cmd
 
     @staticmethod
     def call_shell(code):
+        """
+        Выполнить команду в консоли
+        :param code: Команда
+        """
         try:
             retcode = call(code, shell=True)
             if retcode < 0:
@@ -208,6 +243,13 @@ class Console:
 
     @classmethod
     def check_ssh(cls, host):
+        """
+        Проверить ssh-хост на возможность подключиться к нему без пароля
+        кэширует результаты в переменной, так что медленным будет только первый вызов,
+        остальные будут мгновенными
+        :param host: хост для подключения к ssh
+        :return: True если удалось подключиться и Exception (именно возвращает, а не кидает его) если нет
+        """
         if host == "":
             return True
         if host not in cls._checked_ssh_hosts:
@@ -239,6 +281,11 @@ class Console:
 
     @staticmethod
     def call_shell_and_return(code):
+        """
+        Выполняет код в консоли и возвращает то, что консоль вернула в ответ (stdout)
+        :param code: строка, код для запуска в консоли
+        :return: строка, текст, возвращённый консолью
+        """
         try:
             output = check_output(code, shell=True)
             return output
@@ -247,6 +294,12 @@ class Console:
 
     @staticmethod
     def list2cmdline(seq):
+        """
+        Превратить массив из команды и параметров в строку для запуска в консоли.
+        Выполняет экранирование всяких плохих символов
+        :param seq: массив из команды и параметров
+        :return: строка
+        """
         slist = []
         for item in seq:
             slist.append(shlex.quote(item))
@@ -254,6 +307,17 @@ class Console:
 
     @staticmethod
     def p_expect(pexpect_child, variants_dict, ssh=False):
+        """
+        Обёртка над объектом pexpect, в отличии от него, умеет возвращать
+        осмысленные "названия" произошедших событий (pexpect может только номера), а также,
+        умеет реагировать на ошибки работы по ssh.
+        :param pexpect_child: Объект, полученный при выполнении pexpect.spawn(...)
+        :param variants_dict: dict, ключи которого - имена событий, а значения - текстовые строки, которые программа
+                              должна вывести, чтобы это послужило сигналом этих событий.
+        :param ssh: True/False использовать ли проверку на ошибки подключения по ssh.
+                    При такой ошибке кидается исключение
+        :return: Возвращает название события
+        """
         vd = copy.deepcopy(variants_dict)
         if ssh:
             vd["ssh_first_connect"] = "Are you sure you want to continue connecting"
@@ -272,6 +336,12 @@ class Console:
 
 class Mysql:
     def __init__(self, user, password, sshhost):
+        """
+        Конструктор класса
+        :param user: пользователь
+        :param password: пароль
+        :param sshhost: ssh-хост, на котором находится mysql-сервер (или с которого к нему можно подключиться)
+        """
         self.user = user
         self.password = password
         self.sshhost = sshhost
@@ -280,6 +350,12 @@ class Mysql:
         self.remove_tables = []
 
     def query(self, query):
+        """
+        Выполнить запрос в mysql. Выполняется посредством запуска консольного клиента, и передачи ему SQL-запрос
+        :param query: SQL-запрос
+        :return: текст, возвращённый mysql-клиентом (разумеется, просто строка, никаких "записей, полей" и т.д.
+                 парсить этот результат придётся самостоятельно.
+        """
         pexvs = {}
         pexvs["mysql_pass"] = "Enter password:"
         pexvs["eof"] = pexpect.EOF
@@ -300,6 +376,11 @@ class Mysql:
             raise Exception("Error while calling mysql: " + data)
 
     def fill_cached_update_time(self):
+        """
+        Заполнить кэш времени обновлений таблиц баз данных.
+        Выполняет запрос, получающий от mysql список баз данных, таблиц, и даты последнего изменения этих таблиц.
+        Результат парсится, и заносится в кэш для дальнейшего быстрого доступа
+        """
         print("Filling cached update time")
         data = self.query(
                 'USE  information_schema; ' +
@@ -322,11 +403,26 @@ class Mysql:
         self.cached_update_time = dbs
 
     def get_table_change_date(self, database, table):
+        """
+        Получить дату изменения таблицы
+        возвращает дату изменения из кэша (построенного функцией fill_cached_update_time), а если кэш пуст - вызывает
+        эту самую функцию (fill_cached_update_time)
+        :param database: имя базы данных
+        :param table: имя таблицы
+        :return: дата изменения
+        """
         if self.cached_update_time is None:
             self.fill_cached_update_time()
         return self.cached_update_time[database][table]
 
     def call_dump(self, options, cmd_before="", cmd_after=""):
+        """
+        Запустить скрипт mysql_dump на сервере
+        :param options: набор опций, передаваемых в mysqldump (обычные, все кроме -u и -p)
+        :param cmd_before: консольная команда, которую нужно выполнить ДО запуска, например, удалить прошлый дамп
+        :param cmd_after: консольная команда, которую нужно выполнить ПОСЛЕ запуска, например внести какие-то изменения
+                          в файлы дампа
+        """
         pexvs = {}
         pexvs["mysqldump_pass"] = "Enter password:"
         pexvs['mysqldump_usage'] = "Usage: mysqldump"
@@ -368,11 +464,42 @@ class Mysql:
             data = (p.before).decode("UTF-8")
             raise Exception("Error while calling mysql: " + data)
 
-    def dump_dbs(self, dbs, root_folder, force_dump_intact=False):
+    def remove_dump(self, root_folder):
+        print("Removing dump from: " + root_folder)
+        Console.call_shell(
+            Console.cmd("find '" + root_folder + "' -type f -name *.sql -exec rm {} \;", self.sshhost)
+        )
+        Console.call_shell(
+            Console.cmd("find '" + root_folder + "' -type d -empty -delete")
+        )
 
+
+    def dump_dbs(self, dbs, root_folder, force_dump_intact=False):
+        """
+        Выполнить дамп баз данных по таблицам в отдельные файлы.
+        Для каждой базы данных создаётся отдельная папка, а в ней, для каждой таблицы
+        создаётся файл со структурой и файл с данными.
+        Перед началом дампа собирается информация о том, каковы даты изменения таблиц, хранящиеся в уже сделанных ранее
+        дампах (если они были), чтобы не перезаписывать те таблицы, которые не изменились.
+        При дампе, в каждый файл дописывается дата изменения таблицы, которая как раз и используется для исключения
+        лишней работы.
+        :param dbs: dict, ключи которого - имена баз данных, а значения - массивы имён таблиц
+        :param root_folder: папка, в которую нужно складывать дампы баз данных
+        :param force_dump_intact: True/False, нужно ли перезаписывать даже не изменённые файлы таблиц
+        :return:
+        """
         old_dump_info = self.get_old_dump_info(root_folder)
 
         def dump_params(filename, tbl, db, save_data, save_structure):
+            """
+            Замыкание формирует параметры для запуска mysql_dump конкретной базы и конкретной таблицы
+            :param filename: имя файла, куда сохранять дамп
+            :param tbl: имя таблицы
+            :param db: имя базы данных
+            :param save_data: сохранять ли данные? boolean
+            :param save_structure: сохранять структуру? boolean
+            :return:
+            """
             table_update_date = self.get_table_change_date(db, tbl)
 
             base_filename = os.path.basename(filename)
@@ -409,6 +536,15 @@ class Mysql:
             return params
 
         def call_dump(filename, tbl, db, save_data, save_structure):
+            """
+            Замыкание, вызывающее дамп одной таблицы
+            :param filename: имя файла, куда надо сохранить дамп
+            :param tbl: название таблицы
+            :param db: название базы данных
+            :param save_data: сохранять данные? boolean
+            :param save_structure: сохранять структуру? boolean
+            :return:
+            """
             params = dump_params(filename, tbl, db, save_data, save_structure)
 
             if params is None:
@@ -427,6 +563,14 @@ class Mysql:
                 call_dump(folder + "/" + tbl + ".data.sql", tbl, db, True, False)
 
     def get_old_dump_info(self, folder):
+        """
+        Получить информацию о старых дампах.
+        загружает на удалённый (или локальный, в зависимости от sshhost) сервер bash-скрипт, который сканирует папку
+        в поиска SQL-дампов, и пытается прочитать данные о дате изменения. Что прочитал - выводит в ответ.
+        После загрузки bash-скрипта, он запускается, считываются отображённые им данные, и заносятся в dict
+        :param folder:
+        :return: многомерный dict, содержащий информацию о старых дампах
+        """
         old_info = {}
 
         bash_file = folder + "/old_dump_info.sh"
@@ -478,6 +622,12 @@ class Mysql:
         return old_info
 
     def get_dbs_and_tbls(self):
+        """
+        Получить список баз данных и таблиц.
+        Получает базы и таблицы путём запроса к консольному mysql-клиенту
+        :return: dict, ключи которого - имена баз, а значения - массивы с именами таблиц каждой базы,
+                 например {"first_db": ["table1", "table2", "table3"], "second_db": ["table4", "table5"]}
+        """
         Console.check_ssh_or_throw(self.sshhost)
         result_raw = self.query(
                 'USE information_schema; SELECT CONCAT("&", TABLE_SCHEMA, "&") as db,' +
@@ -500,6 +650,29 @@ class Mysql:
         return dbs
 
     def filter_dbs_and_tbls(self, dbs, filters):
+        """
+        Отфильтровать базы данных и таблицы по заданным правилам
+        :param dbs: dict базы данных и таблицы, со структурой, аналогичной той,
+                    которую возвращает функция get_dbs_and_tbls
+        :param filters: массив фильтров. Каждый фильтр - это также массив, состоящий из трёх значений - действия,
+                        базы и таблицы.
+                        Пример:
+                        [
+                            ["include", "*", "*"] # включить все базы и все таблицы
+                            ["exclude", "*", "_log$"] # исключить из всех баз таблицы, заканчивающиеся на _log
+                            ["include", "mydb", "important_log"] # добавить таблтицу important_log из базы mydb
+                        ]
+                        то есть, первый параметр - либо "include" либо "exclude".
+                        второй параметр - либо "*", либо регулярное выражение, определяет правило отбора баз данных
+                                         ("*" - аналог регулярного выражения ".*"
+                        третий параметр - тоже самое, но для выбора таблиц.
+
+                        Изначально не выбрано ничего, фильтры проходятся по очереди, и, в соответствии с их действием,
+                        ("include" или "exlude") производится добавление БД и таблиц в результирующий список, либо
+                        удаление из него.
+
+        :return: dict баз данных и таблиц, формат аналогичен параметру dbs
+        """
         selected_dbs = {}
         for rule in filters:
             if len(rule) != 3:
@@ -772,6 +945,9 @@ def go(variants, rsync_callback=Rsync.default_callback):
         print_asterisked("Backuping variant `" + variant_name + "`")
 
         start_time = time.time()
+
+        mysqldump = None
+
         if "mysqldump" in variant:
             mysqldump = variant['mysqldump']
             assert(type(mysqldump) == dict)
@@ -779,7 +955,10 @@ def go(variants, rsync_callback=Rsync.default_callback):
             assert("password" in mysqldump)
             assert("sshhost" in mysqldump)
             assert("filters" in mysqldump)
+            assert("folder" in mysqldump)
             del variant['mysqldump']
+
+            remove_after_backup = mysqldump.get("remove_after_backup", False)
 
             mysql = Mysql(mysqldump['user'], mysqldump['password'], mysqldump['sshhost'])
 
@@ -805,5 +984,10 @@ def go(variants, rsync_callback=Rsync.default_callback):
         summ_time += dtime
 
         print_asterisked("Rsync for variant `" + variant_name + "` is done, time is:" + str(dtime))
+
+        if mysqldump and remove_after_backup:
+            print_asterisked("Remove mysql DB dump after rsync")
+            mysql.remove_dump(mysqldump["folder"])
+
 
     print_asterisked("Backup is done, full time is:" + str(summ_time))
