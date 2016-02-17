@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import backup
 import click
 import os
@@ -6,41 +7,58 @@ import os
 @click.command()
 @click.option(
     "--conf_dir", type=click.Path(exists=True, dir_okay=True, readable=True),
-    help="Directory, where config files should be searched"
+    help="Directory, where config files should be searched\nIgnored, if --conf_dir is specified"
 )
 @click.option(
     "--conf", default="", type=click.File(mode="r"),
-    help="Conf file, that should be used", multiple=True
+    help="Conf file, that should be used. May be used several times for multiple files.",
+    multiple=True
 )
 @click.option(
     "--run", default="", type=click.STRING,
-    help="Variant name, that shoud be backuped", multiple=True
+    help="Variant name, that shoud be backuped. May be used several times for multiple variants", multiple=True
 )
-@click.option("--verbose", default=False, help="Display verbose information about backup process", is_flag=True)
-def run(conf_dir, conf, verbose, run):
+#@click.option("--verbose", default=False, help="Display verbose information about backup process", is_flag=True)
+def run(conf_dir, conf, run):
+    """
+    Main function, with attached click's console arguments handlers
+    :param conf_dir: str of dir, where to search for config files.
+    :param conf: list of config files to read
+    :param run: list of variants to run (if not all should be runned)
+    :return:
+    """
     conf_data = {}
     if len(conf):
         conf_files = [item.name for item in conf]
-        print("Указаны сторонние конфигурационные файлы:")
+        print("Using specified config files: {}".format(", ".join(conf_files)))
         conf_data = backup.Conf.read_conf_files(conf_files)
     elif conf_dir:
-        print("Указан сторонний каталог с конфигурационными файлами")
+        print("Using specified config folder '{}'".format(conf_dir))
         conf_data = backup.Conf.read_conf_dir(conf_dir)
     else:
-        print("Используем каталог с конфиг-файлами по умолчанию")
-        dir = os.path.realpath("~/.config/LinuxTimeMachine/variants")
+        dir = os.path.expanduser("~/.config/LinuxTimeMachine/variants")
+        print("Using default config folder '{}'".format(dir))
         if not os.path.exists(dir):
             os.makedirs(dir)
-        conf_data = backup.Conf.read_conf_dir(conf_dir)
+        conf_data = backup.Conf.read_conf_dir(dir)
 
-    if (len(run)):
-        confs = {}
-        for variant in run:
-            confs[variant] = conf_data[variant]
-    else:
-        confs = conf_data
+    if conf_data and len(conf_data) > 0:
+        if len(run):
+            print("Running backup of specified variants: {}".format(", ".format(run)))
+            confs = {}
+            for variant in run:
+                if variant in conf_data:
+                    confs[variant] = conf_data[variant]
+                else:
+                    print("Variant '{}' not exists in readed conf".format(variant))
+        else:
+            print("Running backup of all the variants")
+            confs = conf_data
 
-    backup.go(confs)
+        print("confs to run:")
+        print(confs)
+        if confs and len(confs):
+            backup.go(confs)
 
 
 if __name__ == "__main__":
