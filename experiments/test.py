@@ -1,4 +1,6 @@
-import backup
+from outer import read_custom_py_module
+
+backup = read_custom_py_module("../backup.py")
 import shutil
 import time
 # Этот файл содержит пароли к mysql-серверам. В репозиторий не добавлен из соображений безопасности
@@ -78,7 +80,7 @@ variants = {
             "filters": [
                 ["include", "*", "*"],
             ],
-            "remove_after_backup": True
+            "remove_after_backup": False
         }
     },
     "mihanentalpo.me-files": {
@@ -102,7 +104,6 @@ variants = {
         }
     }
 }
-
 
 pVariants = {}
 
