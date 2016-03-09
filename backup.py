@@ -46,7 +46,7 @@ import shlex
 import json
 import yaml
 import types
-import collections
+from collections import OrderedDict as Odict
 from io import StringIO
 
 
@@ -127,7 +127,7 @@ class Conf:
         files = [dir_path + "/" + file for file in sorted(filenames)]
         if len(files) == 0:
             print("There are no config files in folder '{}'".format(dir_path))
-        conf = collections.OrderedDict
+        conf = Odict()
         for file in files:
             print("Found config files:" + ", ".join(files))
             conf.update(Conf.read_conf_file(file))
