@@ -127,6 +127,7 @@ class Conf:
         if len(files) == 0:
             print("There are no config files in folder '{}'".format(dir_path))
         for file in files:
+            print("Found config files:" . join(", ", files))
             return Conf.read_conf_file(file)
 
     @staticmethod
