@@ -1085,7 +1085,7 @@ def go(variants, rsync_callback=Rsync.default_callback):
         print("* " + text + " *")
         print("**" + "*" * len(text) + "**")
 
-    assert(type(variants)==dict)
+    assert(type(variants) in [dict, Odict])
     summ_time = 0
     for variant_name in variants:
 
