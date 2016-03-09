@@ -485,7 +485,7 @@ class Mysql:
         """
         if self.cached_update_time is None:
             self.fill_cached_update_time()
-        return self.cached_update_time[database][table]
+        return Tools.getNestedDictValue(self.cached_update_time, database, table)
 
     def call_dump(self, options, cmd_before="", cmd_after=""):
         """
