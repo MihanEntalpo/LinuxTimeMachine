@@ -906,7 +906,7 @@ class Rsync:
 
         """
         Console.check_ssh_or_throw(dest_host)
-        cmd = Console.cmd("find'{dest}'  -maxdepth 1 -name {tmp_dir}*", dest_host)
+        cmd = Console.cmd("find '{dest}' -maxdepth 1 -name {tmp_dir}*", dest_host)
         cmd = cmd.format(dest=dest, dest_host=dest_host, tmp_dir=tmp_dir)
         try:
             print(cmd)
