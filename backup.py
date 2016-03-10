@@ -172,7 +172,7 @@ class Conf:
                          could recognize, what method should be used to load file
         :return: dict, containing backup variants from file
         """
-        assert(filename, str)
+        assert isinstance(filename, str)
 
         regs = {
             "py": ".*\.py3?$",

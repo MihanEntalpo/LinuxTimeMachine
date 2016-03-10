@@ -1,0 +1,7 @@
+#!/bin/bash
+LINK=`readlink $0` 
+if [ -z ${LINK} ]; then
+  LINK=$0
+fi
+DIRNAME=`dirname ${LINK}`
+python3 $DIRNAME/go.py $@
