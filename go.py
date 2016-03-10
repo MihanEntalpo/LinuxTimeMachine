@@ -2,6 +2,7 @@
 import backup
 import click
 import os
+import sys
 
 
 @click.command()
@@ -21,11 +22,9 @@ import os
 #@click.option("--verbose", default=False, help="Display verbose information about backup process", is_flag=True)
 def run(conf_dir, conf, run):
     """
-    Main function, with attached click's console arguments handlers
-    :param conf_dir: str of dir, where to search for config files.
-    :param conf: list of config files to read
-    :param run: list of variants to run (if not all should be runned)
-    :return:
+    LinuxTimeMachine backuper script
+    Start backup, configured by config files, places in ~/.config/LinuxTimeMachine/variants,
+    or by command line parameters --cond_dir or --conf
     """
     conf_data = {}
     if len(conf):
