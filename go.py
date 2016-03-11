@@ -5,24 +5,26 @@ import os
 import sys
 
 
-@click.command()
+@click.group(help="LinuxTimeMachine control tool.To display help on a command, use <command> --help")
+def cli():
+    pass
+
+@cli.command()
 @click.option(
-    "--conf_dir", type=click.Path(exists=True, dir_okay=True, readable=True),
+    "--conf_dir", type=click.Path(exists=True, dir_okay=True, readable=True), metavar="<path>",
     help="Directory, where config files should be searched\nIgnored, if --conf_dir is specified"
 )
 @click.option(
-    "--conf", default="", type=click.File(mode="r"),
+    "--conf", default="", type=click.File(mode="r"), metavar="<filename>",
     help="Conf file, that should be used. May be used several times for multiple files.",
     multiple=True
 )
 @click.option(
-    "--run", default="", type=click.STRING,
-    help="Variant name, that shoud be backuped. May be used several times for multiple variants", multiple=True
+    "--run", default="", type=click.STRING, metavar="<variant name>",
+    help="Variant name, that should be backuped. May be used several times for multiple variants", multiple=True
 )
-#@click.option("--verbose", default=False, help="Display verbose information about backup process", is_flag=True)
-def run(conf_dir, conf, run):
+def backup(conf_dir, conf, run):
     """
-    LinuxTimeMachine backuper script
     Start backup, configured by config files, places in ~/.config/LinuxTimeMachine/variants,
     or by command line parameters --cond_dir or --conf
     """
@@ -61,4 +63,4 @@ def run(conf_dir, conf, run):
 
 
 if __name__ == "__main__":
-    run()
+    cli(obj={})
