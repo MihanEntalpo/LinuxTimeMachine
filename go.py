@@ -1,5 +1,6 @@
 #!/usr/bin/python3
-import backup
+from backup import Conf
+from backup import go as go_backup
 import click
 import os
 import sys
@@ -32,16 +33,16 @@ def backup(conf_dir, conf, run):
     if len(conf):
         conf_files = [item.name for item in conf]
         print("Using specified config files: {}".format(", ".join(conf_files)))
-        conf_data = backup.Conf.read_conf_files(conf_files)
+        conf_data = Conf.read_conf_files(conf_files)
     elif conf_dir:
         print("Using specified config folder '{}'".format(conf_dir))
-        conf_data = backup.Conf.read_conf_dir(conf_dir)
+        conf_data = Conf.read_conf_dir(conf_dir)
     else:
         dir = os.path.expanduser("~/.config/LinuxTimeMachine/variants")
         print("Using default config folder '{}'".format(dir))
         if not os.path.exists(dir):
             os.makedirs(dir)
-        conf_data = backup.Conf.read_conf_dir(dir)
+        conf_data = Conf.read_conf_dir(dir)
 
     if conf_data and len(conf_data) > 0:
         if len(run):
@@ -59,7 +60,7 @@ def backup(conf_dir, conf, run):
         print("confs to run:")
         print(confs)
         if confs and len(confs):
-            backup.go(confs)
+            go_backup(confs)
 
 
 if __name__ == "__main__":
