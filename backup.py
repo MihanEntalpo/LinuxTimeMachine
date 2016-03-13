@@ -128,9 +128,11 @@ class Conf:
         if len(files) == 0:
             print("There are no config files in folder '{}'".format(dir_path))
         conf = Odict()
+        print("Found config files:" + ", ".join(files))
         for file in files:
-            print("Found config files:" + ", ".join(files))
-            conf.update(Conf.read_conf_file(file))
+            variants = Conf.read_conf_file(file)
+            if variants is not None:
+                conf.update(variants)
         return conf
 
     @staticmethod
@@ -154,10 +156,14 @@ class Conf:
         :param file: filename
         :return: nested dict with variants, readed from file
         """
+        path = os.path.dirname(file)
+        curpath = os.path.curdir
+        os.chdir(path)
         with open(file, "r") as f:
             code = f.read()
         new_module = types.ModuleType("new_temporary_module")
         exec(code, new_module.__dict__)
+        os.chdir(curpath)
         if "variants" in new_module.__dict__:
             return new_module.variants
         else:
@@ -223,6 +229,59 @@ class Console:
         Console.call_shell(cmd)
 
     @staticmethod
+    def get_backup_dirs(path, host=""):
+        """
+        Get all backup copies dirs, in some path.
+        backup dirs are copies with names like "2016-10-11_12:44:01", each is a copy, made at some time
+        :param path: str Path, where backups was made
+        :param host: str ssh host (if any)
+        :return: list dirnames (like "2016-10-11_12:44:01")
+        """
+        cmd = Console.cmd(
+            Console.list2cmdline(
+                [
+                    "find", path,
+                    "-type", "d",
+                    "-maxdepth", "1",
+                    "-regextype", "grep",
+                    "-regex", path + "/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}"
+                ]
+            ), host
+        )
+
+        if host:
+            Console.check_ssh_or_throw(host)
+
+        backup_dirs = sorted([
+            d[len(path)+1:] for d in Console.call_shell_and_return(cmd).decode("UTF-8").split("\n") if d
+        ], reverse=True)
+
+        return backup_dirs
+
+    @staticmethod
+    def get_dirname_of_datetime(date):
+        """
+        Get dir name from datetime object
+        :param date: datetime object
+        :return: str dir name
+        """
+        dir = date.strftime("%Y-%m-%d_%H:%M:%S")
+        return dir
+
+    @staticmethod
+    def get_datetime_of_dirname(dir):
+        """
+        Get datetime object from dirname "2016-03-13_21:42:29"
+        :param dir: str имя папки
+        :return: datetime объект даты/времени
+        """
+        try:
+            date = datetime.datetime.strptime(dir, "%Y-%m-%d_%H:%M:%S")
+        except Exception as e:
+            date = None
+        return date
+
+    @staticmethod
     def mv(src, dest, host=""):
         """
         Call "mv" console command on local or remove host
@@ -263,25 +322,41 @@ class Console:
             print("Execution failed:", e, file=sys.stderr)
 
     @staticmethod
-    def check_dest_folder(dest, dest_host):
+    def get_lastbackup_timedelta(dest_path, dest_host):
+        """
+        Return timedelta between now and last backup
+        :param dest_path: str backup dest dir
+        :param dest_host: str backup ssh host
+        :return:
+        """
+        backup_dirs = Console.get_backup_dirs(dest_path, dest_host)
+        if len(backup_dirs):
+            first_date = Console.get_datetime_of_dirname(backup_dirs[0])
+            delta = datetime.datetime.now() - first_date
+        else:
+            delta = datetime.datetime.now() - datetime.datetime(1970, 1, 1, 0, 0, 0)
+        return delta
+
+    @staticmethod
+    def check_dest_folder(dest_path, dest_host):
         """
         Ensure, that destination folder exists. If it's not, create it by
         "mkdir -p" command, which creates folder and all it's parents.
         After that, put result in cache, so, next calls would be much faster.
         Works locally or remotely
-        :param dest: str destination folder
+        :param dest_path: str destination folder
         :param dest_host: str sshhost of destination
         """
         Console.check_ssh_or_throw(dest_host)
         if dest_host in Console._checked_dest_folders:
-            if dest in Console._checked_dest_folders[dest_host]:
+            if dest_path in Console._checked_dest_folders[dest_host]:
                 return True
         else:
             Console._checked_dest_folders[dest_host] = {}
-        cmd = Console.cmd(Console.list2cmdline(["mkdir", "-p", dest]), dest_host)
+        cmd = Console.cmd(Console.list2cmdline(["mkdir", "-p", dest_path]), dest_host)
         print("checking folder by command: " + cmd)
         Console.call_shell(cmd)
-        Console._checked_dest_folders[dest_host][dest] = True
+        Console._checked_dest_folders[dest_host][dest_path] = True
 
     @classmethod
     def write_file(cls, filename, content, sshhost=""):
@@ -1014,7 +1089,7 @@ class Rsync:
 
         exclude_str = " ".join(['--exclude "{}"'.format(item) for item in exclude])
 
-        date = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        date = Console.get_dirname_of_datetime(datetime.datetime.now())
 
         params = {
             "exclude_str": exclude_str,
