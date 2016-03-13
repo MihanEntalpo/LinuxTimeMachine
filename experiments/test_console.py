@@ -1,10 +1,7 @@
 import backup
-import passwords
 import json
 
+variants = backup.Conf.read_conf_dir("/home/mihanentalpo/.config/LinuxTimeMachine/variants")
 
-mysql = backup.Mysql("root", "123root", "")
-
-mysql.remove_dump("/home/var/mysql-backu")
 
 
