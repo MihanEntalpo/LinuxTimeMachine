@@ -52,17 +52,17 @@ from io import StringIO
 
 class Tools:
     @staticmethod
-    def getNestedDictValue(dictionary, *keys):
+    def get_nested_dict_value(dictionary, *keys):
         """
         Get element from nested dict object, or None, if it doesn't exists
         For, exampl, if we have data:
         a = {"fruits": {"apple": {"color":"red", "price":"100"}, "orange": {"color":"orange", "proce":50}}}
         Get apple's price:
-        apple_price = Tools.getNestedDictValue(a, "fruits", "apple", "price")
+        apple_price = Tools.get_nested_dict_value(a, "fruits", "apple", "price")
         Get all orange's data:
-        orange_info = Tools.getNestedDictValue(a, "fruits", "orange")
+        orange_info = Tools.get_nested_dict_value(a, "fruits", "orange")
         Try to get non-existing data would return Non
-        watermelon_price = Tools.getNestedDictValue(a, "fruits", "watermelon", "price")
+        watermelon_price = Tools.get_nested_dict_value(a, "fruits", "watermelon", "price")
         :param dictionary: nested dict objct
         :param keys: array of keys, sequentally taken form dicts
         :return:
@@ -74,6 +74,31 @@ class Tools:
             else:
                 pointer = pointer[key]
         return pointer
+
+    @staticmethod
+    def make_time_delta(src):
+        if type(src) == datetime.timedelta:
+            delta = src
+        elif type(src) == dict:
+            params = {}
+            for name in ["days", "weeks", "hours", "minutes", "seconds", "milliseconds", "microseconds"]:
+                if name in src:
+                    params[name] = src[name]
+            delta = datetime.timedelta(**params)
+        elif type(src) == str:
+            matches = re.findall(
+                "(([0-9]+)\ *(days|weeks|hours|minutes|seconds|milliseconds|microseconds))",
+                re.sub("[,;]", " ", src)
+            )
+            params = {}
+            for match in matches:
+                num = int(match[1])
+                name = match[2]
+                params[name] = num
+
+            delta = datetime.timedelta(**params)
+
+        return delta
 
 
 class Conf:
@@ -564,7 +589,7 @@ class Mysql:
         """
         if self.cached_update_time is None:
             self.fill_cached_update_time()
-        return Tools.getNestedDictValue(self.cached_update_time, database, table)
+        return Tools.get_nested_dict_value(self.cached_update_time, database, table)
 
     def call_dump(self, options, cmd_before="", cmd_after=""):
         """
@@ -661,7 +686,7 @@ class Mysql:
 
             base_filename = os.path.basename(filename)
 
-            table_old_update_date = Tools.getNestedDictValue(old_dump_info, db, tbl, base_filename)
+            table_old_update_date = Tools.get_nested_dict_value(old_dump_info, db, tbl, base_filename)
 
             if table_old_update_date == table_update_date and not force_dump_intact:
                 return None
