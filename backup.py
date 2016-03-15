@@ -1197,6 +1197,18 @@ def go(variants, rsync_callback=Rsync.default_callback):
 
         mysqldump = None
 
+        if "min_timedelta" in variant:
+            min_timedelta = Tools.make_time_delta(variant["min_timedelta"])
+            print("Min timedelta is: " + str(min_timedelta))
+            lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'], variant['dest']['host'])
+            print("Last backup timedelta is: " + str(lastbackup_timedelta))
+            if lastbackup_timedelta > min_timedelta:
+                print("Last backup was further when min timedelta, continue to backup")
+            else:
+                print_asterisked("Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
+                continue
+            del variant["min_timedelta"]
+
         if "mysqldump" in variant:
             mysqldump = variant['mysqldump']
             assert(type(mysqldump) == dict)
