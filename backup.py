@@ -401,7 +401,6 @@ class Console:
             codes = codes + "\\x" + hex(byte)[2:]
         cmd = Console.cmd("bash -c 'echo -e \"" + codes + "\" > " + cls.list2cmdline([filename]) + " ' ", sshhost)
         print("Writing file " + filename + ((" on ssh:" + sshhost) if sshhost else " locally"))
-        #print("Command: " + cmd)
         cls.call_shell_and_return(cmd)
 
     @classmethod
@@ -500,14 +499,28 @@ class Console:
         if ssh:
             vd["ssh_first_connect"] = "Are you sure you want to continue connecting"
             vd["ssh_password_required"] = "s password:"
+            vd["ssh_timeout"] = "Connection timed out"
         keys, values = vd.keys(), vd.values()
-        res = pexpect_child.expect(list(values))
+
+        try:
+            res = pexpect_child.expect(list(values))
+        except pexpect.exceptions.TIMEOUT as ex:
+            raise Exception("Error: timeout while running command {} {}\n Accepted data: {}".format(
+                pexpect_child.command, " ".join(pexpect_child.args),
+                (
+                    pexpect_child.before
+                    + pexpect_child.after if isinstance(pexpect_child.after, (bytes, bytearray)) else b""
+                ).decode("UTF-8")
+            ))
         dres = list(keys)[res]
         if ssh:
             if dres in ("ssh_first_connect", "ssh_password_required"):
                 pexpect_child.sendline("n")
                 data = (pexpect_child.before + pexpect_child.after).decode("UTF-8")
                 raise Exception("Error non-interactive connecting to ssh: " + data)
+            elif dres in ("ssh_timeout"):
+                data = (pexpect_child.before + pexpect_child.after).decode("UTF-8")
+                raise Exception("Timeout while connecting to ssh: " + data)
 
         return dres
 
@@ -539,7 +552,7 @@ class Mysql:
 
         cmd = Console.cmd(Console.list2cmdline(["mysql", "-u" + self.user, "-p", "-e", query]), self.sshhost)
 
-        p = pexpect.spawn(cmd)
+        p = pexpect.spawn(cmd, timeout=60)
         res = Console.p_expect(p, pexvs, ssh=(self.sshhost != ""))
         if res == "mysql_pass":
             p.sendline(self.password)
@@ -799,6 +812,7 @@ class Mysql:
                         old_info[db][tbl] = {}
                     old_info[db][tbl][file] = update_date
 
+        print("Existing dump data harvested")
         Console.rm(bash_file, self.sshhost)
 
         return old_info
