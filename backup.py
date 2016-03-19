@@ -265,6 +265,14 @@ class Console:
         cmd = Console.cmd(
             Console.list2cmdline(
                 [
+                    "test",
+                    "-d",
+                    path
+                ]
+            )
+            + " && " +
+            Console.list2cmdline(
+                [
                     "find", path,
                     "-type", "d",
                     "-maxdepth", "1",
