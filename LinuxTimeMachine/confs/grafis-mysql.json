@@ -1,0 +1,15 @@
+{
+    "Grafis.org-mysql": {
+        "src": {"path": "/var/mysql-dump", "host":"root@grafis.org"},
+        "dest": {"path": "/home/data/Grafis/Backups/ltm-mysql", "host":""},
+        "mysqldump": {
+            "user": "root", "password": "FulNancolvoovy",
+            "sshhost" : "root@grafis.org",
+            "folder": "/var/mysql-dump",
+            "filters": [
+                ["include", "*", "*"]
+            ]
+        },
+	"min_timedelta": "0 hours"
+    }
+}

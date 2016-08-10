@@ -1,0 +1,24 @@
+{
+    "mihanentalpo.me-files": {
+        "description": "Папка со всеми сайтами, находящимися на сервере MihanentalpoFirst",
+        "src": {"path": "/var/www", "host":"mihanentalpo.me"},
+        "dest": {"path": "/home/data/mihanentalpo.me/backup/files", "host":""},
+        "exclude": [
+            "*.log", "*.tar", "*.tar.gz", "*.zip", "*.sql",
+            "www/2995575.ru/www/wp-content/cache"
+        ]
+    },
+    "mihanentalpo.me-mysql": {
+        "description": "Все базы данных Mysql с сервера MihanentalpoFirst",
+        "src": {"path": "/home/mihanentalpo/mysql-backup", "host":"mihanentalpo.me"},
+        "dest": {"path": "/home/data/mihanentalpo.me/backup/database", "host":""},
+        "mysqldump": {
+            "user": "root", "password": "NawbirAylficgojI",
+            "sshhost" : "mihanentalpo.me",
+            "folder": "/home/mihanentalpo/mysql-backup",
+            "filters": [
+                ["include", "*", "*"]
+            ]
+        }
+    }
+}
