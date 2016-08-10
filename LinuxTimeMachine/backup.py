@@ -51,8 +51,6 @@ from io import StringIO
 from subprocess import call, Popen, PIPE, check_output
 
 
-
-
 class Log:
 
     _singleton = None

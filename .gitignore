@@ -6,3 +6,6 @@ confs/*.json
 confs/*.yaml
 confs/*.yml
 experiments/forward.py
+dist/
+build/
+LinuxTimeMachine.egg-info/
