@@ -10,13 +10,14 @@ home_mihanentalpo:
     mihanentalpo/.xsession-errorsmihanentalpo/.PyCharm40/system/index, mihanentalpo/.PyCharm40/system/log,
     mihanentalpo/.PyCharm50/system/index, mihanentalpo/.PyCharm50/system/log, mihanentalpo/.thumbnails,
     mihanentalpo/Downloads, mihanentalpo/VirtualBox VMs, mihanentalpo/.PyCharm40/system/index,
-    mihanentalpo/.TelegramDesktop/log.txt, mihanentalpo/.config/freshwrapper-data/Shockwave
-      Flash, mihanentalpo/.config/transmission/resume, '*.pyc', '*.bak', mihanentalpo/.PyCharm50/system,
+    mihanentalpo/.TelegramDesktop/log.txt, "mihanentalpo/.config/freshwrapper-data/Shockwave Flash",
+    mihanentalpo/.config/transmission/resume, '*.pyc', '*.bak', mihanentalpo/.PyCharm50/system,
     mihanentalpo/.config/google-chrome/Default/Local Storage, mihanentalpo/.config/google-chrome/Default/IndexedDB,
     mihanentalpo/.config/google-chrome/Default/GPUCache, .parentlock, cookies.sqlite,
     downloads.json, mihanentalpo/.icedove/6xzgf26z.default/logs/irc, mihanentalpo/.kde/share/apps/RecentDocuments,
     mihanentalpo/.kde/share/apps/dolphin/view_properties/search, mihanentalpo/.netbeans/8.0.2/var/filehistory,
-    mihanentalpo/.PyCharm50/config/options/statistics.application.usages.xml]
+    mihanentalpo/.PyCharm50/config/options/statistics.application.usages.xml,
+    mihanentalpo/git/UnrealEngine, mihanentalpo/UnrealProjects/UnrealZV/.git]
   src: {host: '', path: /home/mihanentalpo}
 home_mihanentalpo_downloads:
   dest: {host: backuper@terrarian, path: /home/backuper/backup/machines/mihanlenovo/home/mihanentalpo_Downloads}

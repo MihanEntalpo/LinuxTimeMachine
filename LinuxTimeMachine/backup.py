@@ -33,7 +33,7 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE."""
 
-import exceptions
+from . import exceptions
 import sys
 import os
 import re
@@ -248,6 +248,8 @@ class Conf:
         :return: dict, containing backup variants from file
         """
         assert isinstance(filename, str)
+        if not os.path.exists(filename):
+            raise exceptions.ConfigFileNotExists("File `" + filename + "` not exists")
 
         regs = {
             "py": ".*\.py3?$",
@@ -279,23 +281,27 @@ class Conf:
         return conf
 
 
-
 class Console:
     # staticvariable
     _checked_ssh_hosts = {}
     _checked_dest_folders = {}
 
     @staticmethod
-    def rm(path, host=""):
+    def rm(path, host="", check=False):
         """
         Remove file from local or remote host. Just a single file!
         :param path: str file path
         :param host: str ssh-host
+        :param check: bool check, if rm successfull, throw excetion otherwise
         :return:
         """
-        cmd = Console.cmd(Console.list2cmdline(["rm", path]), host)
+        cmd = Console.cmd(Console.list2cmdline(["rm", path]), host) + " 2> /dev/null"
         Log.debug("Command: " + cmd)
-        Console.call_shell(cmd)
+        res = Console.call_shell(cmd) == 0
+        if check:
+            if Console.check_file_exists(path, host):
+                raise exceptions.RemoveFileNotSuccessfull(path, host)
+        return res
 
     @staticmethod
     def check_file_exists(path, host=""):
@@ -356,7 +362,7 @@ class Console:
     @staticmethod
     def get_dirname_of_datetime(date):
         """
-        Get dir name from datetime object
+        Generates dir name from datetime object, in format "YYYY-MM-DD_hh:mm:ss"
         :param date: datetime object
         :return: str dir name
         """
@@ -420,26 +426,30 @@ class Console:
         return retcode
 
     @staticmethod
-    def get_lastbackup_timedelta(dest_path, dest_host):
+    def get_lastbackup_timedelta(dest_path, dest_host="", now_datetime=None):
         """
         Return timedelta between now and last backup
         :param dest_path: str backup dest dir
         :param dest_host: str backup ssh host
+        :param now_datetime: datetime override datetime.now()
         :return:
         """
+        if now_datetime is None:
+            now_datetime = datetime.datetime.now()
+
         backup_dirs = Console.get_backup_dirs(dest_path, dest_host)
         if len(backup_dirs):
             first_date = Console.get_datetime_of_dirname(backup_dirs[0])
-            delta = datetime.datetime.now() - first_date
+            delta = now_datetime - first_date
         else:
-            delta = datetime.datetime.now() - datetime.datetime(1970, 1, 1, 0, 0, 0)
+            delta = now_datetime - datetime.datetime(1970, 1, 1, 0, 0, 0)
         return delta
 
     @staticmethod
     def check_src_folder(src_path, src_host=""):
-        cmd = Console.cmd(Console.list2cmdline(["ls", "-1", src_path]), src_host)
-        Log.info("Testing for src folder by cmd: " + cmd)
-        res = Console.call_shell_and_return(cmd)
+        Log.info("Testing for src folder : " + src_path)
+        res = Console.check_file_exists(src_path, src_host)
+        return res
 
 
     @staticmethod
@@ -462,6 +472,7 @@ class Console:
         Log.info("checking folder by command: " + cmd)
         Console.call_shell(cmd)
         Console._checked_dest_folders[dest_host][dest_path] = True
+        return Console._checked_dest_folders[dest_host][dest_path]
 
     @classmethod
     def write_file(cls, filename, content, sshhost=""):
@@ -513,6 +524,7 @@ class Console:
             res = Console.p_expect(p, {
                 "ssh_first_connect": "Are you sure you want to continue connecting",
                 "ssh_password_required": "s password:",
+                "ssh_connection_timedout": "Connection timed out",
                 "ok": "testmessage",
                 "eof": pexpect.EOF
             })
@@ -614,6 +626,7 @@ class Mysql:
         self.password = password
         self.sshhost = sshhost
         self.cached_update_time = None
+        self.cached_table_checksums = None
         self.remove_dbs = ["TABLE_SCHEMA", "information_schema", "mysql", "performance_schema"]
         self.remove_tables = []
 
@@ -670,6 +683,43 @@ class Mysql:
 
         self.cached_update_time = dbs
 
+    def fill_cached_table_checksums(self):
+        """
+        Fill tables's checksums.
+        Executes SQL-query, that take CHECKSUMS of every table in every database in passed nested dict, and
+        put result data into self.cached_table_checksums
+        """
+        Log.info("Filling cached tables hashes")
+
+        dbs_tbls = self.get_dbs_and_tbls()
+
+        num2tbls = []
+        result_parts = {}
+
+        for db in dbs_tbls:
+            for tbl in dbs_tbls[db]:
+                dbtbl = "`{}`.`{}`".format(db, tbl)
+                num2tbls.append(dbtbl)
+                result_parts["{}.{}".format(db,tbl)] = [db, tbl]
+
+        query = "CHECKSUM TABLE " + ", ".join(num2tbls) + " EXTENDED;";
+
+        checksums = self.query(query)
+
+        dbs = {}
+
+        for line in checksums.split("\n"):
+            matches = re.match("(?P<name>.*?\..*?)\t(?P<checksum>[0-9]+)", line)
+            if matches:
+                name = matches.groupdict()['name']
+                checksum = int(matches.groupdict()['checksum'])
+                db, tbl = result_parts[name]
+                if db not in dbs:
+                    dbs[db] = {}
+                dbs[db][tbl] = checksum
+
+        self.cached_table_checksums = dbs
+
     def get_table_change_date(self, database, table):
         """
         Get table update_time. Used to compare last dumped file's information and current update_time, to skip
@@ -681,6 +731,17 @@ class Mysql:
         if self.cached_update_time is None:
             self.fill_cached_update_time()
         return Tools.get_nested_dict_value(self.cached_update_time, database, table)
+
+    def get_table_checksum(self, database, table):
+        """
+        Get table hash, that should tell, did table changed from last backup.
+        :param database: database name
+        :param table: table name
+        :return:
+        """
+        if self.cached_table_checksums is None:
+            self.fill_cached_table_checksums()
+        return Tools.get_nested_dict_value(self.cached_table_checksums, database, table)
 
     def call_dump(self, options, cmd_before="", cmd_after=""):
         """
@@ -725,7 +786,7 @@ class Mysql:
             data = (p.before + p.after).decode("UTF-8")
             p.expect(pexpect.EOF)
             data += (p.before).decode("UTF-8")
-            raise Exception("Options not are bad, mysqldump returned :\n" + data)
+            raise Exception("Options are bad, mysqldump returned :\n" + data)
         elif res == "eof":
             data = (p.before).decode("UTF-8")
             raise Exception("Error while calling mysql: " + data)
@@ -775,12 +836,24 @@ class Mysql:
             """
             table_update_date = self.get_table_change_date(db, tbl)
 
+            table_checksum = self.get_table_checksum(db, tbl)
+
             base_filename = os.path.basename(filename)
 
-            table_old_update_date = Tools.get_nested_dict_value(old_dump_info, db, tbl, base_filename)
+            cur_info = Tools.get_nested_dict_value(old_dump_info, db, tbl, base_filename)
+            if cur_info:
+                table_old_update_date = cur_info["update_date"]
+                table_old_checksum = cur_info["checksum"]
+            else:
+                table_old_update_date = None
+                table_old_checksum = None
 
-            if table_old_update_date == table_update_date and not force_dump_intact:
-                return None
+            #if table_old_update_date == table_update_date and not force_dump_intact:
+            #    return None
+            if str(table_old_checksum) == str(table_checksum):
+                if table_old_update_date == table_update_date:
+                    if not force_dump_intact:
+                        return None
 
             param_array = []
 
@@ -798,11 +871,14 @@ class Mysql:
                 "cmd_after":("echo -e '-- LTMINFO: TMVERSION:#{version}# " +
                                     " DB:#{db}#" +
                                     " TBL:#{tbl}#" +
-                                    " TABLEUPDATEDATE:#{date}#' >> {filename}").format(
+                                    " TABLEUPDATEDATE:#{date}#" +
+                                    " TABLECHECKSUM:#{checksum}#" +
+                                    "' >> {filename}").format(
                                         date=table_update_date,
                                         filename=filename,
                                         version=TimeMachineVersion,
                                         tbl=tbl,
+                                        checksum=table_checksum,
                                         db=db
                 )
             }
@@ -810,6 +886,12 @@ class Mysql:
 
         def call_dump(filename, tbl, db, save_data, save_structure):
             """
+            TODO: необходимо сделать обработку ошибок, таких как нехватку места на диске, проявляющихся вот так:
+                mysqldump: Error: 'Got error 28 from storage engine' when trying to dump tablespaces
+                mysqldump: Couldn't execute 'show fields from `voucher_history`': Got error 28 from storage engine (1030)
+            TODO: необходимо сделать настраиваемый таймаут команды mysqldump (в pexpect) чтобы команда не вылетала чуть что,
+                а если уж и вылетает, то чтобы не вылетал весь бэкап целиком, а просто сообщалось об ошибке.
+
             Closure, starts dump for a single table
             :param filename: str dump filename
             :param tbl: str table name
@@ -832,8 +914,9 @@ class Mysql:
             folder = root_folder + "/" + db
 
             for tbl in dbs[db]:
-                call_dump(folder + "/" + tbl + ".structure.sql", tbl, db, False, True)
-                call_dump(folder + "/" + tbl + ".data.sql", tbl, db, True, False)
+                call_dump(folder + "/" + tbl + ".complete.sql", tbl, db, True, True)
+                #call_dump(folder + "/" + tbl + ".structure.sql", tbl, db, False, True)
+                #call_dump(folder + "/" + tbl + ".data.sql", tbl, db, True, False)
 
     def get_old_dump_info(self, folder):
         """
@@ -873,7 +956,7 @@ class Mysql:
         cmd = Console.cmd(" bash '" + bash_file + "'", self.sshhost)
 
         result = Console.call_shell_and_return(cmd).decode("UTF-8").split("\n")
-        reg = re.compile("INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# FILE:#(?P<FILE>[^#]+)#")
+        reg = re.compile("INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# (TABLECHECKSUM:#(?P<TABLECHECKSUM>[^#]+)# )?\ ?FILE:#(?P<FILE>[^#]+)#")
         for line in result:
             matches = reg.search(line)
             if matches:
@@ -881,6 +964,7 @@ class Mysql:
                 db = d['DB']
                 tbl = d['TBL']
                 update_date = d['TABLEUPDATEDATE']
+                checksum = d['TABLECHECKSUM'] if "TABLECHECKSUM" in d else 0
                 file = d['FILE']
                 version = d['TMVERSION']
                 if int(version) == TimeMachineVersion:
@@ -888,7 +972,7 @@ class Mysql:
                         old_info[db] = {}
                     if tbl not in old_info[db]:
                         old_info[db][tbl] = {}
-                    old_info[db][tbl][file] = update_date
+                    old_info[db][tbl][file] = {"update_date":update_date, "checksum":checksum}
 
         Log.info("Existing dump data harvested")
         Console.rm(bash_file, self.sshhost)
@@ -903,6 +987,7 @@ class Mysql:
                  for example: {"my_database_1" : ["table1", "table2", "table3"], "my_database_2": ["table4", "table5"]}
         """
         Console.check_ssh_or_throw(self.sshhost)
+        Log.info("Quering for all databases and tables list")
         result_raw = self.query(
                 'USE information_schema; SELECT CONCAT("&", TABLE_SCHEMA, "&") as db,' +
                 ' CONCAT("&", TABLE_NAME, "&") as tbl FROM TABLES'
@@ -1013,8 +1098,8 @@ class Rsync:
         self.line_parsers = [
             {
                 "type": "progress",
-                "re": "(?P<bytes>[0-9,]+)\ +(?P<progress>[0-9]+)%\ +(?P<speed>[0-9\.]+[MKGTmkgt])B/s\ +" +
-                      "(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\ +" +
+                "re": "(?P<bytes>[0-9,]+)\s+(?P<progress>[0-9]+)%\s+(?P<speed>[0-9\.]+[MKGTmkgt])B/s\s+" +
+                      "(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\s+" +
                       "\(xfr#(?P<xfr_num>[0-9]+), ir-chk=(?P<ir_chk_top>[0-9]+)/(?P<ir_chk_bottom>[0-9]+)\)",
                 "parser": lambda res: {
                     "time": int(res['second']) + 60 * int(res['minute']) + 3600 * int(res['hour']),
@@ -1025,6 +1110,21 @@ class Rsync:
                     "xfr_num": int(res['xfr_num']),
                     "ir_chk_top": int(res['ir_chk_top']),
                     "ir_chk_bottom": int(res['ir_chk_bottom'])
+                }
+            },
+            {
+                "type": "progress",
+                "re": "(?P<bytes>[0-9,]+)\s+(?P<progress>[0-9]+)%\s+(?P<speed>[0-9\.]+[MKGTmkgt])B/s\s+" +
+                      "(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\s+",
+                "parser": lambda res: {
+                    "time": int(res['second']) + 60 * int(res['minute']) + 3600 * int(res['hour']),
+                    "type": "progress",
+                    "bytes": int(res['bytes'].replace(",", "")),
+                    "speed": float(res['speed'][0:-1]) * self.multipliers[res['speed'][-1].upper()],
+                    "progress": float(res['progress']),
+                    "xfr_num": 0,
+                    "ir_chk_top": 0,
+                    "ir_chk_bottom": 0
                 }
             },
             {
@@ -1081,7 +1181,10 @@ class Rsync:
                     data['speed'] = str(round(speed / (1024**2), 2)) + "MB/s"
                 elif speed > 1024:
                     data['speed'] = str(round(speed / (1024), 2)) + "KB/s"
-                Log.info("Progress:{progress}%, checked {ir_chk_top} / {ir_chk_bottom}, speed: {speed}".format(**data))
+                if data['ir_chk_top'] and data['ir_chk_bottom']:
+                    Log.info("Progress:{progress}%, checked {ir_chk_top} / {ir_chk_bottom}, speed: {speed}".format(**data))
+                else:
+                    Log.info("Progress:{progress}%, speed: {speed}".format(**data))
             except Exception as e:
                 Log.info(data)
                 Log.info(e)
@@ -1102,7 +1205,7 @@ class Rsync:
 
         """
         Console.check_ssh_or_throw(dest_host)
-        cmd = Console.cmd("find '{dest}' -maxdepth 1 -name {tmp_dir}*", dest_host)
+        cmd = Console.cmd("find '{dest}' -name {tmp_dir}* -maxdepth 1", dest_host)
         cmd = cmd.format(dest=dest, dest_host=dest_host, tmp_dir=tmp_dir)
         try:
             Log.debug(cmd)
@@ -1116,7 +1219,7 @@ class Rsync:
         """
         Use existing in-progress folder as current (by renaming it to current datetime)
         For example, if your previuos backup was interrupted, and temporary progress folder
-        had name "in-progress-2015-12-25_10:00:00", and you want to untilize it by under name
+        had name "in-progress-2015-12-25_10:00:00", and you want to utilize it by under name
         "in-progress-2015-12-25_10:30:05", this function will rename it to you (and only the last folder, if there
         are several folders, having name, starts with "in-progress-"
         :param dest_path: destination path
@@ -1198,7 +1301,6 @@ class Rsync:
         except TypeError as e:
             Log.debug("Process return code: UNKNOWN (TypeError)")
 
-
     def timemachine(self, src, dest, exclude=[], callback=lambda x: x):
         """
         Run rsync backup by build it's command line and pass it to "go" function of the class.
@@ -1223,6 +1325,9 @@ class Rsync:
 
         Console.check_ssh_or_throw(dest['host'])
         Console.check_ssh_or_throw(src['host'])
+
+        if not Console.check_file_exists(src['path'], src['host']):
+            raise exceptions.SrcNotFound()
 
         exclude_str = " ".join(['--exclude "{}"'.format(item) for item in exclude])
 
@@ -1257,13 +1362,13 @@ class Rsync:
 
         Console.rm(params['dest_path'] + "/Latest", dest['host'])
 
-        Console.call_shell(
-            Console.cmd(
-                Console.list2cmdline(
-                    ["ln", "-s", params['dest_path'] + "/" + params['date'], params['dest_path'] + "/Latest"]
-                )
-            )
+        ln_cmd = Console.cmd(
+            Console.list2cmdline(
+                ["ln", "-s", params['dest_path'] + "/" + params['date'], params['dest_path'] + "/Latest"]
+            ), params['dest_host']
         )
+
+        Console.call_shell(ln_cmd)
 
         # cmds = [
         #     (
