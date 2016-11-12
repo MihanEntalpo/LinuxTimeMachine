@@ -104,6 +104,9 @@ class MainConf:
         self.conf = {}
         if confFile is not None:
             self.readConf()
+        self.raven_dsn = self.conf.get("raven_dsn", "")
+        if self.raven_dsn:
+            ravenClient(self.raven_dsn)
 
     def loadFile(self, confFile):
         print("Loading main conf from " + confFile)
