@@ -1327,7 +1327,7 @@ class Rsync:
         Console.check_ssh_or_throw(src['host'])
 
         if not Console.check_file_exists(src['path'], src['host']):
-            raise exceptions.SrcNotFound()
+            raise exceptions.SrcNotFound(src['path'], src['host'])
 
         exclude_str = " ".join(['--exclude "{}"'.format(item) for item in exclude])
 
