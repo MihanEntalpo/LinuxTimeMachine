@@ -1423,67 +1423,69 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
     assert(type(variants) in [dict, Odict])
     summ_time = 0
     for variant_name in variants:
+        try:
+            variant = copy.deepcopy(variants[variant_name])
 
-        variant = copy.deepcopy(variants[variant_name])
+            print_asterisked("Backuping variant `" + variant_name + "`")
 
-        print_asterisked("Backuping variant `" + variant_name + "`")
+            start_time = time.time()
 
-        start_time = time.time()
+            mysqldump = None
 
-        mysqldump = None
+            if "min_timedelta" in variant:
+                min_timedelta = Tools.make_time_delta(variant["min_timedelta"])
+                Log.info("Min timedelta is: " + str(min_timedelta))
+                lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'], variant['dest']['host'])
+                Log.info("Last backup timedelta is: " + str(lastbackup_timedelta))
+                if lastbackup_timedelta > min_timedelta:
+                    Log.info("Last backup was further when min timedelta, continue to backup")
+                else:
+                    print_asterisked("Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
+                    continue
+                del variant["min_timedelta"]
 
-        if "min_timedelta" in variant:
-            min_timedelta = Tools.make_time_delta(variant["min_timedelta"])
-            Log.info("Min timedelta is: " + str(min_timedelta))
-            lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'], variant['dest']['host'])
-            Log.info("Last backup timedelta is: " + str(lastbackup_timedelta))
-            if lastbackup_timedelta > min_timedelta:
-                Log.info("Last backup was further when min timedelta, continue to backup")
-            else:
-                print_asterisked("Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
-                continue
-            del variant["min_timedelta"]
+            if "mysqldump" in variant:
+                mysqldump = variant['mysqldump']
+                assert(type(mysqldump) == dict)
+                assert("user" in mysqldump)
+                assert("password" in mysqldump)
+                assert("sshhost" in mysqldump)
+                assert("filters" in mysqldump)
+                assert("folder" in mysqldump)
+                del variant['mysqldump']
 
-        if "mysqldump" in variant:
-            mysqldump = variant['mysqldump']
-            assert(type(mysqldump) == dict)
-            assert("user" in mysqldump)
-            assert("password" in mysqldump)
-            assert("sshhost" in mysqldump)
-            assert("filters" in mysqldump)
-            assert("folder" in mysqldump)
-            del variant['mysqldump']
+                remove_after_backup = mysqldump.get("remove_after_backup", False)
 
-            remove_after_backup = mysqldump.get("remove_after_backup", False)
+                mysql = Mysql(mysqldump['user'], mysqldump['password'], mysqldump['sshhost'])
 
-            mysql = Mysql(mysqldump['user'], mysqldump['password'], mysqldump['sshhost'])
+                dbs = mysql.filter_dbs_and_tbls(
+                    mysql.get_dbs_and_tbls(),
+                    mysqldump['filters']
+                )
 
-            dbs = mysql.filter_dbs_and_tbls(
-                mysql.get_dbs_and_tbls(),
-                mysqldump['filters']
-            )
+                print_asterisked("Dumping mysql dbs for variant `" + variant_name + "`")
 
-            print_asterisked("Dumping mysql dbs for variant `" + variant_name + "`")
+                mysql.dump_dbs(dbs, mysqldump['folder'])
 
-            mysql.dump_dbs(dbs, mysqldump['folder'])
+                print_asterisked("Dumping mysql dbs for variant `" + variant_name + "` is done!")
 
-            print_asterisked("Dumping mysql dbs for variant `" + variant_name + "` is done!")
+            print_asterisked("Rsync is started for variant `" + variant_name + "`")
 
-        print_asterisked("Rsync is started for variant `" + variant_name + "`")
+            rsync = Rsync()
 
-        rsync = Rsync()
+            rsync.timemachine(callback=rsync_callback, **variant)
 
-        rsync.timemachine(callback=rsync_callback, **variant)
+            end_time = time.time()
+            dtime = end_time - start_time
+            summ_time += dtime
 
-        end_time = time.time()
-        dtime = end_time - start_time
-        summ_time += dtime
+            print_asterisked("Rsync for variant `" + variant_name + "` is done, time is:" + str(dtime))
 
-        print_asterisked("Rsync for variant `" + variant_name + "` is done, time is:" + str(dtime))
-
-        if mysqldump and remove_after_backup:
-            print_asterisked("Remove mysql DB dump after rsync")
-            mysql.remove_dump(mysqldump["folder"])
+            if mysqldump and remove_after_backup:
+                print_asterisked("Remove mysql DB dump after rsync")
+                mysql.remove_dump(mysqldump["folder"])
+        except exceptions.Base as e:
+            Log.error("Backuping of variant `` error: " + str(type(e)) + ":" + str(e) +", skipping.")
 
 
     print_asterisked("Backup is done, full time is:" + str(summ_time))
