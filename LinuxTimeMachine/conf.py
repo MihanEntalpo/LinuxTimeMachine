@@ -1,11 +1,17 @@
 from .common import Log
 from .common import Tools
+from . import exceptions
+
+from collections import OrderedDict as Odict
 from raven import Client as RavenClient
+
 import re
 import importlib
 import os
 import json
 import yaml
+import types
+
 
 def ravenClient(dsn=None):
     """
@@ -30,6 +36,8 @@ class MainConf:
 
     def __init__(self, confFile=None):
         self.confFile=confFile
+        if not confFile:
+            confFile = os.path.expanduser("~/.config/LinuxTimeMachine/mainconf.json")
         self.conf = {}
         if confFile is not None:
             self.readConf()
@@ -60,7 +68,7 @@ class MainConf:
             with open(confFile, "r") as f:
                 self.conf = yaml.load(f)
         elif filetype == "py":
-            spec = importlib.util.spec_from_file_location("module.name", "/path/to/file.py")
+            spec = importlib.util.spec_from_file_location("module", confFile)
             foo = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(foo)
             self.conf = foo.conf
@@ -68,8 +76,11 @@ class MainConf:
     def readConf(self, confFile=None):
         if confFile is not None:
             self.confFile = confFile
-        if self.confFile and os.path.exists(self.confFile):
-            self.loadFile(self.confFile)
+        if self.confFile:
+            if os.path.exists(self.confFile):
+                self.loadFile(self.confFile)
+            else:
+                Log.error("mainConf file `{}` not found".format(self.confFile))
 
 class Conf:
     """
