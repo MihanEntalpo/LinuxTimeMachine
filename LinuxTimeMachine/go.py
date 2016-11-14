@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from .backup import Conf
 from .backup import go as backup_go
+from .conf import MainConf
 import click
 import os
 import re
@@ -8,20 +9,6 @@ import json
 import yaml
 import sys
 import importlib.util
-from raven import Client as RavenClient
-
-def ravenClient(dsn=None):
-    """
-    :return: RavenClient
-    """
-    if not hasattr(ravenClient, "client_object"):
-        if dsn is None:
-            if True:
-                dsn = "https://5eecb9a8baa5425dac7bbb781e69188d:1b1ce7c7bd3d489bad7998b8f2fecbf2@sentry.mihanentalpo.me/16"
-            else:
-                dsn = ""
-        ravenClient.client_object = RavenClient(dsn)
-    return ravenClient.client_object
 
 def process_variants(conf_dir, conf, run, dontrun, here):
     conf_data = {}
@@ -90,58 +77,6 @@ def process_variants(conf_dir, conf, run, dontrun, here):
                     del confs[variant]
 
     return confs
-
-class MainConf:
-
-    @staticmethod
-    def I(confFile=None):
-        if not hasattr(MainConf.I, "instance"):
-            MainConf.I.instance = MainConf(confFile)
-        return MainConf.I.instance
-
-    def __init__(self, confFile=None):
-        self.confFile=confFile
-        self.conf = {}
-        if confFile is not None:
-            self.readConf()
-        self.raven_dsn = self.conf.get("raven_dsn", "")
-        if self.raven_dsn:
-            ravenClient(self.raven_dsn)
-
-    def loadFile(self, confFile):
-        print("Loading main conf from " + confFile)
-        regs = {
-            "py": ".*\.py3?$",
-            "json": ".*\.json$",
-            "yaml": ".*\.ya?ml$"
-        }
-        filetype = None
-        for typename in regs:
-            if re.search(regs[typename], confFile):
-                filetype = typename
-                print("File type is:" + typename)
-                break
-        if filetype is None:
-            raise Exception("File type of " + confFile + " not detected. Extension should be .py, .py3, .json, .yml, .yaml")
-
-        if filetype == "json":
-            with open(confFile, "r") as f:
-                self.conf = json.load(f)
-        elif filetype == "yaml":
-            with open(confFile, "r") as f:
-                self.conf = yaml.load(f)
-        elif filetype == "py":
-            spec = importlib.util.spec_from_file_location("module.name", "/path/to/file.py")
-            foo = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(foo)
-            self.conf = foo.conf
-
-    def readConf(self, confFile=None):
-        if confFile is not None:
-            self.confFile = confFile
-        if self.confFile and os.path.exists(self.confFile):
-            self.loadFile(self.confFile)
-
 
 @click.group(help="LinuxTimeMachine control tool. To display help on a command, use <command> --help")
 def cli():
@@ -243,6 +178,7 @@ def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
     Start backup, configured by config files, places in ~/.config/LinuxTimeMachine/variants,
     or by command line parameters --cond_dir or --conf
     """
+    MainConf.I(mainconf if mainconf else None)
 
     confs = process_variants(conf_dir, conf, run, dontrun, here)
 

@@ -9,3 +9,4 @@ experiments/forward.py
 dist/
 build/
 LinuxTimeMachine.egg-info/
+experiments/test_raven_conf.json
