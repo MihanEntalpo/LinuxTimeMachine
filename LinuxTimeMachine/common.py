@@ -1,7 +1,7 @@
 import sys
 import logging
 import re
-from datetime import datetime
+import datetime
 
 class Log:
 
