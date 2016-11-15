@@ -111,8 +111,8 @@ class Console:
             Console.list2cmdline(
                 [
                     "find", path,
-                    "-type", "d",
                     "-maxdepth", "1",
+                    "-type", "d",
                     "-regextype", "grep",
                     "-regex", path + "/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}"
                 ]
