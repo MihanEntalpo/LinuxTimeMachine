@@ -11,6 +11,7 @@ import os
 import json
 import yaml
 import types
+import sys
 
 
 def ravenClient(dsn=None):
@@ -18,12 +19,10 @@ def ravenClient(dsn=None):
     :return: RavenClient
     """
     if not hasattr(ravenClient, "client_object"):
-        if dsn is None:
-            if True:
-                dsn = "https://5eecb9a8baa5425dac7bbb781e69188d:1b1ce7c7bd3d489bad7998b8f2fecbf2@sentry.mihanentalpo.me/16"
-            else:
-                dsn = ""
-        ravenClient.client_object = RavenClient(dsn)
+        if dsn is not None:
+            ravenClient.client_object = RavenClient(dsn)
+        else:
+            return None
     return ravenClient.client_object
 
 class MainConf:
@@ -42,6 +41,8 @@ class MainConf:
         if confFile is not None:
             self.readConf()
         self.raven_dsn = self.conf.get("raven_dsn", "")
+        self.loglevel = self.conf.get("loglevel", "INFO")
+        Log.I(self.loglevel, sys.stdout, True)
         if self.raven_dsn:
             ravenClient(self.raven_dsn)
 
