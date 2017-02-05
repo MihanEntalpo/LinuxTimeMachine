@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from .backup import Conf
 from .backup import go as backup_go
+from .backup import sweep as sweep_go
 from .conf import MainConf
 import click
 import os
@@ -185,8 +186,46 @@ def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
     print("variants to run:")
     print(json.dumps(confs, indent=4))
     if confs and len(confs):
-        backup_go(confs)
+        backup_go(confs, verbose=verbose)
 
+@cli.command()
+@click.option(
+    "--conf_dir", type=click.Path(exists=True, dir_okay=True, readable=True), metavar="<path>",
+    help="Directory, where config files should be searched\nIgnored, if --conf_dir is specified"
+)
+@click.option(
+    "--conf", default="", type=click.File(mode="r"), metavar="<filename>",
+    help="Conf file, that should be used. May be used several times for multiple files.",
+    multiple=True
+)
+@click.option(
+    "--run", default="", type=click.STRING, metavar="<variant name>",
+    help="Variant name, that should be sweeped. May be used several times for multiple variants", multiple=True
+)
+@click.option(
+    "--dontrun", default="", type=click.STRING, metavar="<variant name>",
+    help="Variant name, that should be skipped from sweep. May be used several times for multiple variants", multiple=True
+)
+@click.option(
+    "--verbose", "-v", default=False, is_flag=True, help="Display verbose sweep info"
+)
+@click.option(
+    "--here", "-h", default=False, is_flag=True, help="Try to use use config, that have relation to current location"
+)
+@click.option(
+    "--mainconf", "-mc", type=click.STRING, metavar="<main config file>",
+    help="File with main config options, if not specified, default values are used", default=""
+)
+def sweep(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
+    MainConf.I(mainconf if mainconf else None)
+
+    confs = process_variants(conf_dir, conf, run, dontrun, here)
+
+    print("variants to sweep:")
+    print(json.dumps(confs, indent=4))
+
+    if confs and len(confs):
+        sweep_go(confs, verbose)
 
 if __name__ == "__main__":
     cli(obj={})
