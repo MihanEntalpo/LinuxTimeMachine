@@ -221,8 +221,7 @@ def sweep(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
 
     confs = process_variants(conf_dir, conf, run, dontrun, here)
 
-    print("variants to sweep:")
-    print(json.dumps(confs, indent=4))
+    print("variants to sweep:{}".format(len(confs)))
 
     if confs and len(confs):
         sweep_go(confs, verbose)
