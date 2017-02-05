@@ -54,6 +54,16 @@ import logging
 from collections import OrderedDict as Odict
 from io import StringIO
 from subprocess import call, Popen, PIPE, check_output
+from yapsy.PluginManager import PluginManager
+
+
+class Plugins:
+    def __init__(self):
+        self.manager = PluginManager()
+        self.manager.setPluginPlaces([Tools.get_here_path() + "/plugins"])
+        self.manager.collectPlugins()
+
+
 
 class Console:
     # staticvariable
@@ -299,12 +309,16 @@ class Console:
                 "ssh_first_connect": "Are you sure you want to continue connecting",
                 "ssh_password_required": "s password:",
                 "ssh_connection_timedout": "Connection timed out",
+                "ssh_host_key_changed":"WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED",
                 "ok": "testmessage",
                 "eof": pexpect.EOF
             })
             if res in ["ssh_first_connect", "ssh_password_required"]:
                 data = p.before.decode("UTF-8")
                 result = exceptions.SshError("ssh cannot connect automatically, message: " + data)
+            elif res == "ssh_host_key_changed":
+                data = p.before.decode("UTF-8")
+                result = exceptions.SshError("ssh cannot connect, REMOTE HOST IDENTIFICATION HAS CHANGED, message: " + data)
             elif res == "ok":
                 result = True
             elif res == pexpect.EOF:
@@ -967,7 +981,7 @@ class Rsync:
         elif data['type'] == "message":
             Log.info("Message: " + data['message'])
         else:
-            Log.info("".join([key + ":" + data[key] for key in data]))
+            Log.info("".join([str(key) + ":" + str(data[key]) for key in data]))
 
     def get_exists_progress_folders(self, dest, dest_host, tmp_dir="in-progress-"):
         """
@@ -1161,6 +1175,9 @@ class Rsync:
         #     else:
         #         Console.call_shell(raw_cmd)
 
+
+def sweep(variants, verbose=False):
+    pass
 
 def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
     """
