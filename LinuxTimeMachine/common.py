@@ -2,6 +2,7 @@ import sys
 import logging
 import re
 import datetime
+import os
 
 class Log:
 
@@ -46,6 +47,18 @@ class Log:
 
 
 class Tools:
+    @staticmethod
+    def get_here_path(filename=None):
+        """
+        Get path of directory, where filename, or (if not set) common.py (this file) is located
+        :param filename Filename, the path to dir of which should be returned
+        :return: dir path
+        """
+        if filename is None:
+            filename = __file__
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        return dir_path
+
     @staticmethod
     def get_nested_dict_value(dictionary, *keys):
         """
