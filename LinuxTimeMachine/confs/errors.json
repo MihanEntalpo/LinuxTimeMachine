@@ -1,0 +1,11 @@
+{
+    "2995575.ru": {
+        "src": {"path": "/home/nickolas/2995575", "host":"root@mihanentalpo.me"},
+        "dest": {"path": "/tmp/2995575.ru", "host":""},
+        "exclude": [
+            "*.log", "*.tar", "*.tar.gz", "*.zip", "*.sql", "2995575/wp-content/cache",
+            "2995575/wp-content/plugins/wordfence/tmp"
+        ],
+        "min_timedelta": "12 hours"
+    }
+}
