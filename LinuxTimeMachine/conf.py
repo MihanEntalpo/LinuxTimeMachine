@@ -14,6 +14,19 @@ import types
 import sys
 
 
+class DummyRavenCallable():
+    def __init__(self, field_name):
+        self.field_name = field_name
+    def __call__(self, *args, **kwargs):
+        print("Called DummyRavenObject->" + self.field_name)
+
+
+class DummyRavenObject():
+    def __getattr__(self, item):
+        print("Requested item `{}` from DummyRavenObject".format(item))
+        return DummyRavenCallable(item)
+
+
 def ravenClient(dsn=None):
     """
     :return: RavenClient
@@ -22,8 +35,9 @@ def ravenClient(dsn=None):
         if dsn is not None:
             ravenClient.client_object = RavenClient(dsn)
         else:
-            return None
+            return DummyRavenObject()
     return ravenClient.client_object
+
 
 class MainConf:
 

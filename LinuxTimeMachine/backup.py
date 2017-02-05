@@ -1259,7 +1259,7 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
                 print_asterisked("Remove mysql DB dump after rsync")
                 mysql.remove_dump(mysqldump["folder"])
         except exceptions.Base as e:
-            Log.error("Backuping of variant `` error: " + str(type(e)) + ":" + str(e) +", skipping.")
+            Log.error("Backuping of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
             ravenClient().capture_exceptions(e)
 
 

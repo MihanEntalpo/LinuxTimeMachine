@@ -13,6 +13,7 @@ import importlib.util
 
 def process_variants(conf_dir, conf, run, dontrun, here):
     conf_data = {}
+    confs = {}
 
     if here and len(run):
         print("Error: --run and --here shouldn't be used together!")
@@ -187,6 +188,8 @@ def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
     print(json.dumps(confs, indent=4))
     if confs and len(confs):
         backup_go(confs, verbose=verbose)
+    else:
+        print("Where are no variants to run")
 
 @cli.command()
 @click.option(
