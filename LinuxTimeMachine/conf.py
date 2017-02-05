@@ -53,7 +53,7 @@ class MainConf:
             confFile = os.path.expanduser("~/.config/LinuxTimeMachine/mainconf.json")
         self.conf = {}
         if confFile is not None:
-            self.readConf()
+            self.readConf(confFile)
         self.raven_dsn = self.conf.get("raven_dsn", "")
         self.loglevel = self.conf.get("loglevel", "INFO")
         Log.I(self.loglevel, sys.stdout, True)
