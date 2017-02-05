@@ -34,7 +34,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE."""
 
 from . import exceptions
-from .conf import MainConf
+from .conf import MainConf, ravenClient
 from .conf import Conf
 from .common import Log
 from .common import Tools
@@ -1158,26 +1158,13 @@ class Rsync:
 
         Console.call_shell(ln_cmd)
 
-        # cmds = [
-        #     (
-        #         "rsync -axv --info=progress2 --delete {exclude_str} --link-dest='{latest_dir}' '{src_full}' '{dest_full}/{cur_tmp_dir}'",
-        #         True),
-        #     ("{cmd_pre} mv '{dest_path}/{cur_tmp_dir}' '{dest_path}/{date}' {cmd_post}", False),
-        #     ("{cmd_pre} rm -f '{dest_path}/Latest' {cmd_post}", False),
-        #     ("{cmd_pre} ln -s '{dest_path}/{date}' '{dest_path}/Latest' {cmd_post}", False)
-        # ]
-        #
-        # for (cmd, is_rsync) in cmds:
-        #     raw_cmd = cmd.format(**params)
-        #     print("Command: " + raw_cmd)
-        #     if (is_rsync):
-        #         self.go(raw_cmd, callback)
-        #     else:
-        #         Console.call_shell(raw_cmd)
 
 
-def sweep(variants, verbose=False):
-    pass
+def print_asterisked(text):
+    Log.info("**" + "*" * len(text) + "**")
+    Log.info("* " + text + " *")
+    Log.info("**" + "*" * len(text) + "**")
+
 
 def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
     """
@@ -1206,10 +1193,6 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
                      default is Rsync.default_callback (can be used as an example)
     :return:
     """
-    def print_asterisked(text):
-        Log.info("**" + "*" * len(text) + "**")
-        Log.info("* " + text + " *")
-        Log.info("**" + "*" * len(text) + "**")
 
     assert(type(variants) in [dict, Odict])
     summ_time = 0
@@ -1277,7 +1260,11 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
                 mysql.remove_dump(mysqldump["folder"])
         except exceptions.Base as e:
             Log.error("Backuping of variant `` error: " + str(type(e)) + ":" + str(e) +", skipping.")
+            ravenClient().capture_exceptions(e)
 
 
     print_asterisked("Backup is done, full time is:" + str(summ_time))
 
+
+def sweep(variants, verbose=False):
+    print_asterisked("Starting sweeping")
