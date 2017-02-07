@@ -431,18 +431,21 @@ class Mysql:
 
         cmd = Console.cmd(Console.list2cmdline(["mysql", "-u" + self.user, "-p", "-e", query]), self.sshhost)
 
-        p = pexpect.spawn(cmd, timeout=60)
-        res = Console.p_expect(p, pexvs, ssh=(self.sshhost != ""))
-        if res == "mysql_pass":
-            p.sendline(self.password)
-            p.read(len(self.password) + 1)
-            data = p.read().decode("UTF-8")
-            if re.search("ERROR\ [0-9]+.*?at line [0-9]+:", data):
-                raise exceptions.MysqlError("MysqlError: " + data)
-            return data
-        elif res == "eof":
-            data = p.before.decode("UTF-8")
-            raise exceptions.MysqlError("Error while calling mysql: " + data)
+        try:
+            p = pexpect.spawn(cmd, timeout=60)
+            res = Console.p_expect(p, pexvs, ssh=(self.sshhost != ""))
+            if res == "mysql_pass":
+                p.sendline(self.password)
+                p.read(len(self.password) + 1)
+                data = p.read().decode("UTF-8")
+                if re.search("ERROR\ [0-9]+.*?at line [0-9]+:", data):
+                    raise exceptions.MysqlError("MysqlError: " + data)
+                return data
+            elif res == "eof":
+                data = p.before.decode("UTF-8")
+                raise exceptions.MysqlError("Error while calling mysql: " + data)
+        except pexpect.TIMEOUT as e:
+            raise exceptions.Timeout()
 
     def fill_cached_update_time(self):
         """
@@ -1268,3 +1271,12 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
 
 def sweep(variants, verbose=False):
     print_asterisked("Starting sweeping")
+    for variant_name in variants:
+        try:
+            variant = copy.deepcopy(variants[variant_name])
+            sweep_conf = variant.get("sweep", None)
+            if sweep_conf is None:
+                continue
+        except Exception as e:
+            Log.error("Sweep of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
+            ravenClient().capture_exceptions(e)
