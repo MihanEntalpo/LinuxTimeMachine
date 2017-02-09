@@ -107,3 +107,14 @@ class Tools:
             delta = datetime.timedelta(**params)
 
         return delta
+
+    @staticmethod
+    def re_match(expr, text, groupdict=None):
+        res = re.match(expr, text)
+        if groupdict is not None:
+            assert isinstance(groupdict, dict)
+            groupdict.clear()
+            if res is not None:
+                for key in res.groupdict():
+                    groupdict[key] = res.groupdict()[key]
+        return res
