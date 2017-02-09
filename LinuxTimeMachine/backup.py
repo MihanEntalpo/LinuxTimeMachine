@@ -64,7 +64,6 @@ class Plugins:
         self.manager.collectPlugins()
 
 
-
 class Console:
     # staticvariable
     _checked_ssh_hosts = {}
@@ -1265,8 +1264,23 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
             Log.error("Backuping of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
             ravenClient().capture_exceptions(e)
 
-
     print_asterisked("Backup is done, full time is:" + str(summ_time))
+
+
+def parse_sweep_conf(sweep_conf):
+    if sweep_conf is None:
+        return None
+    if not isinstance(sweep_conf, (dict, Odict)):
+        raise exceptions.BadSweepConf("sweep config option have to be dict or OrderedDict, but it's '{}'".format(type(sweep_conf)))
+    for period in sweep_conf:
+        interval = sweep_conf[period]
+        matches = {}
+        if Tools.re_match(
+            "^last\ (?P<num>[0-9\.]+)\ (?P<unit>hours?|minutes?|sec(onds?)?|years?|months?|days?|weeks?)$",
+            interval.strip(),
+            matches
+        ):
+            print(matches)
 
 
 def sweep(variants, verbose=False):
@@ -1275,7 +1289,8 @@ def sweep(variants, verbose=False):
         try:
             variant = copy.deepcopy(variants[variant_name])
             sweep_conf = variant.get("sweep", None)
-            if sweep_conf is None:
+            sweep_conf_parsed = parse_sweep_conf(sweep_conf)
+            if sweep_conf_parsed is None:
                 continue
         except Exception as e:
             Log.error("Sweep of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
