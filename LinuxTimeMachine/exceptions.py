@@ -46,6 +46,9 @@ class RemoveFileNotSuccessfull(ConsoleError):
         self.filename = filename
         self.sshhost = sshhost
 
-class EmptySweepConf(Base):
+class Sweep(Base):
+    pass
+
+class BadSweepConf(Sweep):
     def __init__(self, message):
         self.message = message
