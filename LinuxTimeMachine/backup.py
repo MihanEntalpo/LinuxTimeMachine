@@ -1276,11 +1276,16 @@ def parse_sweep_conf(sweep_conf):
         interval = sweep_conf[period]
         matches = {}
         if Tools.re_match(
-            "^last\ (?P<num>[0-9\.]+)\ (?P<unit>hours?|minutes?|sec(onds?)?|years?|months?|days?|weeks?)$",
-            interval.strip(),
+            "^last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?$",
+            period.strip(),
             matches
         ):
+            if matches["num"] is None:
+                matches["num"] = 1
+
             print(matches)
+        else:
+            raise exceptions.BadSweepConf("Error on sweep conf, period string is:'{}', but it should be like 'last [N] [hour|month|day|week|year]' ")
 
 
 def sweep(variants, verbose=False):
@@ -1291,6 +1296,7 @@ def sweep(variants, verbose=False):
             sweep_conf = variant.get("sweep", None)
             sweep_conf_parsed = parse_sweep_conf(sweep_conf)
             if sweep_conf_parsed is None:
+                print("Sweep for variant `{}` isn't configured".format(variant_name))
                 continue
         except Exception as e:
             Log.error("Sweep of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
