@@ -64,6 +64,118 @@ class Plugins:
         self.manager.collectPlugins()
 
 
+class SweepConfList():
+    """
+    Список строк конфигурации частоты копий
+    """
+    def __init__(self, sweep_dict):
+        self.parsed_sweep_conf = []
+        for period_str in sweep_dict:
+            line = SweepConfLine(period_str, sweep_dict[period_str])
+            self.parsed_sweep_conf.append(line)
+
+        self.parsed_sweep_conf = sorted(self.parsed_sweep_conf, key=lambda scl: scl.period.get_days())
+
+
+class LastSweepPeriod():
+    """
+    Класс, определяющий период с текущего момента, в течении которого действует правило на интервал резервных копий.
+    Период формируется из строки вида "last 4 days", "last 1 year" и так далее.
+    """
+    def __init__(self, str_period):
+        self.src_string = str_period
+        period_matches = {}
+        if not Tools.re_match(
+            "^last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?$",
+            str_period.strip(),
+            period_matches
+        ):
+            raise exceptions.BadSweepConf(
+                (
+                    "Error on sweep conf, period string is:'{}', "
+                    + "but it should be like 'last [N] [hour|month|day|week|year]'"
+                ).format(str_period)
+            )
+
+        if period_matches["num"] is None:
+            period_matches["num"] = 1
+        else:
+            period_matches["num"] = Tools.toFloat(period_matches["num"])
+        self.num = Tools.toFloat(period_matches['num'])
+        self.unit = period_matches['unit']
+
+    def get_days(self):
+        last_days = 0
+        if self.unit == "day":
+            last_days = self.num
+        elif self.unit == "week":
+            last_days = self.num * 7
+        elif self.unit == "month":
+            last_days = self.num * 365.2425 / 12
+        elif self.unit == "year":
+            last_days = self.num * 365.2425
+        return last_days
+
+    def get_seconds(self):
+        return self.get_days() * 3600 * 24
+
+
+class SweepInterval():
+    """
+    Класс интервала очистки, т.е. минимального интервала между двумя соседними резервными копиями,
+    меньше которого не должно быть
+    """
+    def __init__(self, str_interval):
+        self.src_string = str_interval
+
+        interval_matches = {}
+        if not Tools.re_match(
+            "^(?P<all>all)|((?P<items>[0-9\.]+)\ per\ (?P<num>[0-9\.]+)?\ ?(?P<unit>hour|year|month|day|week)s?)$",
+                str_interval,
+            interval_matches
+        ):
+            raise exceptions.BadSweepConf(
+                (
+                    "Error on sweep conf, interval string is:'{}', "
+                    + "but it should be like 'all' or '[N] per [M] [hour|month|day|week|year]'"
+                ).format(str_interval)
+            )
+
+        interval_days = 0
+
+        self.is_all = True if interval_matches['all'] else False
+
+        if interval_matches["num"] is None:
+            interval_matches["num"] = 1
+
+        self.items = Tools.toFloat(interval_matches['items'])
+        self.num = Tools.toFloat(interval_matches["num"])
+        self.unit = interval_matches['unit']
+
+    def get_seconds_between(self):
+        sec = 0
+        if self.is_all:
+            sec = 1
+        elif self.unit == "day":
+            sec = self.num * 24 * 3600 / self.items
+        elif self.unit == "week":
+            sec = self.num * 24 * 3600 * 7 / self.items
+        elif self.unit == "month":
+            sec = Tools.toFloat(self.num) * (365.2425 / 12) * 24 * 3600 / self.items
+        elif self.unit == "year":
+            sec = Tools.toFloat(self.num) * 365.2425 * 24 * 3600 / self.items
+        return sec
+
+
+class SweepConfLine:
+    """
+    Класс строки конфигурации прореживания бэкапов
+    """
+    def __init__(self, last_period_str, interval_str):
+        self.interval = SweepInterval(interval_str)
+        self.period = LastSweepPeriod(last_period_str)
+
+
 class Console:
     # staticvariable
     _checked_ssh_hosts = {}
@@ -95,6 +207,17 @@ class Console:
             return False
         elif res == 0:
             return True
+
+
+    @staticmethod
+    def get_backup_dirs_with_dates(path, host="", dates_as_integer=False):
+        return [
+            {
+                "name":dir_name,
+                "date": Console.get_datetime_of_dirname(dir_name, dates_as_integer)
+            }
+            for dir_name in Console.get_backup_dirs(path, host)
+        ]
 
 
     @staticmethod
@@ -153,17 +276,21 @@ class Console:
         return dir
 
     @staticmethod
-    def get_datetime_of_dirname(dir):
+    def get_datetime_of_dirname(dir_name, date_as_integer=False):
         """
         Get datetime object from dirname "2016-03-13_21:42:29"
-        :param dir: str имя папки
+        :param dir_name: str имя папки
         :return: datetime объект даты/времени
         """
         try:
-            date = datetime.datetime.strptime(dir, "%Y-%m-%d_%H:%M:%S")
+            date = datetime.datetime.strptime(dir_name, "%Y-%m-%d_%H:%M:%S")
+            if date_as_integer:
+                res = date.timestamp()
+            else:
+                res = date
         except Exception as e:
-            date = None
-        return date
+            res = None
+        return res
 
     @staticmethod
     def mv(src, dest, host=""):
@@ -234,6 +361,12 @@ class Console:
         res = Console.check_file_exists(src_path, src_host)
         return res
 
+
+    @staticmethod
+    def print_asterisked(text):
+        Log.info("**" + "*" * len(text) + "**")
+        Log.info("* " + text + " *")
+        Log.info("**" + "*" * len(text) + "**")
 
     @staticmethod
     def check_dest_folder(dest_path, dest_host=""):
@@ -1162,12 +1295,6 @@ class Rsync:
 
 
 
-def print_asterisked(text):
-    Log.info("**" + "*" * len(text) + "**")
-    Log.info("* " + text + " *")
-    Log.info("**" + "*" * len(text) + "**")
-
-
 def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
     """
     Run backup variants - full backup operation, include files and mysql (if needed) backup.
@@ -1202,7 +1329,7 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
         try:
             variant = copy.deepcopy(variants[variant_name])
 
-            print_asterisked("Backuping variant `" + variant_name + "`")
+            Console.print_asterisked("Backuping variant `" + variant_name + "`")
 
             start_time = time.time()
 
@@ -1216,7 +1343,7 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
                 if lastbackup_timedelta > min_timedelta:
                     Log.info("Last backup was further when min timedelta, continue to backup")
                 else:
-                    print_asterisked("Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
+                    Console.print_asterisked("Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
                     continue
                 del variant["min_timedelta"]
 
@@ -1239,13 +1366,13 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
                     mysqldump['filters']
                 )
 
-                print_asterisked("Dumping mysql dbs for variant `" + variant_name + "`")
+                Console.print_asterisked("Dumping mysql dbs for variant `" + variant_name + "`")
 
                 mysql.dump_dbs(dbs, mysqldump['folder'])
 
-                print_asterisked("Dumping mysql dbs for variant `" + variant_name + "` is done!")
+                Console.print_asterisked("Dumping mysql dbs for variant `" + variant_name + "` is done!")
 
-            print_asterisked("Rsync is started for variant `" + variant_name + "`")
+                Console.print_asterisked("Rsync is started for variant `" + variant_name + "`")
 
             rsync = Rsync()
 
@@ -1255,49 +1382,41 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
             dtime = end_time - start_time
             summ_time += dtime
 
-            print_asterisked("Rsync for variant `" + variant_name + "` is done, time is:" + str(dtime))
+            Console.print_asterisked("Rsync for variant `" + variant_name + "` is done, time is:" + str(dtime))
 
             if mysqldump and remove_after_backup:
-                print_asterisked("Remove mysql DB dump after rsync")
+                Console.print_asterisked("Remove mysql DB dump after rsync")
                 mysql.remove_dump(mysqldump["folder"])
         except exceptions.Base as e:
             Log.error("Backuping of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
             ravenClient().capture_exceptions(e)
 
-    print_asterisked("Backup is done, full time is:" + str(summ_time))
-
-
-def parse_sweep_conf(sweep_conf):
-    if sweep_conf is None:
-        return None
-    if not isinstance(sweep_conf, (dict, Odict)):
-        raise exceptions.BadSweepConf("sweep config option have to be dict or OrderedDict, but it's '{}'".format(type(sweep_conf)))
-    for period in sweep_conf:
-        interval = sweep_conf[period]
-        matches = {}
-        if Tools.re_match(
-            "^last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?$",
-            period.strip(),
-            matches
-        ):
-            if matches["num"] is None:
-                matches["num"] = 1
-
-            print(matches)
-        else:
-            raise exceptions.BadSweepConf("Error on sweep conf, period string is:'{}', but it should be like 'last [N] [hour|month|day|week|year]' ")
+        Console.print_asterisked("Backup is done, full time is:" + str(summ_time))
 
 
 def sweep(variants, verbose=False):
-    print_asterisked("Starting sweeping")
+    Console.print_asterisked("Starting sweeping")
     for variant_name in variants:
         try:
             variant = copy.deepcopy(variants[variant_name])
-            sweep_conf = variant.get("sweep", None)
-            sweep_conf_parsed = parse_sweep_conf(sweep_conf)
-            if sweep_conf_parsed is None:
+            sweep_conf = SweepConfList(variant.get("sweep", None))
+
+            if len(sweep_conf.parsed_sweep_conf) == 0:
                 print("Sweep for variant `{}` isn't configured".format(variant_name))
                 continue
+
+            dirs = Console.get_backup_dirs_with_dates(
+                variant["dest"]["path"], variant["dest"]["host"], dates_as_integer=True
+            )
+            now = datetime.datetime.now().timestamp()
+            dirs_by_intervals = {}
+            for i in range(len(dirs)):
+                dirs[i]["time_from_now"] = int(now - dirs[i]['date'])
+                print(dirs[i])
+
+            for swcl in sweep_conf.parsed_sweep_conf:
+                print(swcl.period.get_seconds(), swcl.interval.get_seconds_between())
+
         except Exception as e:
             Log.error("Sweep of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
             ravenClient().capture_exceptions(e)
