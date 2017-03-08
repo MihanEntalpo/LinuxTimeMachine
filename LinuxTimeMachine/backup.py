@@ -76,6 +76,11 @@ class SweepConfList():
 
         self.parsed_sweep_conf = sorted(self.parsed_sweep_conf, key=lambda scl: scl.period.get_days())
 
+    def get_sweep_conf_by_timestamp(self, timestamp):
+        for sweep_conf in self.parsed_sweep_conf:
+            if sweep_conf.period.get_seconds() > timestamp:
+                return sweep_conf
+
 
 class LastSweepPeriod():
     """
@@ -174,6 +179,7 @@ class SweepConfLine:
     def __init__(self, last_period_str, interval_str):
         self.interval = SweepInterval(interval_str)
         self.period = LastSweepPeriod(last_period_str)
+        self.data_array = []
 
 
 class Console:
@@ -1412,10 +1418,17 @@ def sweep(variants, verbose=False):
             dirs_by_intervals = {}
             for i in range(len(dirs)):
                 dirs[i]["time_from_now"] = int(now - dirs[i]['date'])
-                print(dirs[i])
+                sweep_conf.get_sweep_conf_by_timestamp(dirs[i]["time_from_now"]).data_array.append(dirs[i])
+
+            print("Items: {}".format(len(dirs)))
 
             for swcl in sweep_conf.parsed_sweep_conf:
                 print(swcl.period.get_seconds(), swcl.interval.get_seconds_between())
+                if swcl.data_array:
+                    print("    Items: " + str(len(swcl.data_array)))
+                    print("    " + "\n    ".join([str(x) for x in swcl.data_array]))
+                else:
+                    print("    No data in this interval")
 
         except Exception as e:
             Log.error("Sweep of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
