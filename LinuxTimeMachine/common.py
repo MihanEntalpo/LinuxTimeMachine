@@ -118,3 +118,11 @@ class Tools:
                 for key in res.groupdict():
                     groupdict[key] = res.groupdict()[key]
         return res
+
+    @staticmethod
+    def toFloat(var):
+        try:
+            f = float(var)
+        except Exception as e:
+            f = 0
+        return f
