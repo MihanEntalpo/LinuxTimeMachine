@@ -12,12 +12,12 @@
         },
 	    "min_timedelta": "0 hours",
         "sweep": {
+            "last year":"1 per month",
             "last day": "all",
             "last week": "2 per day",
             "last month": "1 per day",
             "last 3 months": "1 per 2 days",
-            "last 6 months": "1 per week",
-            "last year":"1 per month"
+            "last 6 months": "1 per week"
         }
     }
 }
