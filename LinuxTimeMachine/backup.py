@@ -55,6 +55,7 @@ from collections import OrderedDict as Odict
 from io import StringIO
 from subprocess import call, Popen, PIPE, check_output
 from yapsy.PluginManager import PluginManager
+from operator import itemgetter
 
 
 class Plugins:
@@ -109,6 +110,23 @@ class LastSweepPeriod():
         self.num = Tools.toFloat(period_matches['num'])
         self.unit = period_matches['unit']
 
+    def get_description(self):
+
+        if self.num == 1:
+            nums = ""
+        elif self.num==int(self.num):
+            nums = str(int(self.num))
+        else:
+            nums = str(self.num)
+
+        units = self.unit
+        if self.num > 1:
+            units += "s"
+        if self.num != 1:
+            units = " " + units
+
+        return "last {}{}".format(nums, units)
+
     def get_days(self):
         last_days = 0
         if self.unit == "day":
@@ -157,10 +175,27 @@ class SweepInterval():
         self.num = Tools.toFloat(interval_matches["num"])
         self.unit = interval_matches['unit']
 
+    def get_description(self):
+        if self.is_all:
+            return "all items"
+        else:
+            items = self.items if int(self.items) != self.items else int(self.items)
+            num = self.num if int(self.num) != self.num else int(self.num)
+            units = self.unit
+            if self.num == 1:
+                num = ""
+            else:
+                units = " " + units + "s"
+
+            return "{} items per {}{}".format(items, num, units)
+
+
     def get_seconds_between(self):
         sec = 0
         if self.is_all:
             sec = 1
+        elif self.unit == "hour":
+            sec = self.num * 3600 / self.items
         elif self.unit == "day":
             sec = self.num * 24 * 3600 / self.items
         elif self.unit == "week":
@@ -181,6 +216,70 @@ class SweepConfLine:
         self.period = LastSweepPeriod(last_period_str)
         self.data_array = []
 
+    def get_conf_decription(self):
+        return "For {} keep {}".format(
+            self.period.get_description(),
+            self.interval.get_description()
+        )
+
+    def sweep_data_items(self, time_field, clean_field):
+        to_remove = 0
+
+        center = 0
+        min_t = 999999999999
+        max_t = 0
+        for i in range(len(self.data_array)):
+            self.data_array[i][clean_field] = None
+            center += self.data_array[i][time_field] / len(self.data_array)
+            min_t = min(min_t, self.data_array[i][time_field])
+            max_t = max(max_t, self.data_array[i][time_field])
+
+        center = int(center)
+
+        interval = self.interval.get_seconds_between()
+
+        #print("center:", center, "min:", min_t, "max:", max_t, "amplitude:", max_t - min_t, "interval:", interval)
+
+        if interval > 0:
+            central_node_i, central_node_value = min(enumerate(self.data_array), key=lambda x: abs(x[1][time_field] - center))
+            #print("central_node_i", central_node_i, "central_node_value", central_node_value[time_field])
+
+            central_node_value[clean_field] = False
+
+            td_i = central_node_i
+            tu_i = central_node_i
+
+            td = central_node_value[time_field]
+            tu = central_node_value[time_field]
+
+            while td > min_t:
+                td -= interval
+                if td_i >= 0:
+                    while td_i >= 0 and self.data_array[td_i][time_field] > td:
+                        if self.data_array[td_i][clean_field] is None:
+                            self.data_array[td_i][clean_field] = True
+                            to_remove += 1
+                        td_i -= 1
+
+                    if td_i >=0 and self.data_array[td_i][time_field] <= td:
+                        if self.data_array[td_i][clean_field] is None:
+                            self.data_array[td_i][clean_field] = False
+                        td = self.data_array[td_i][time_field]
+
+            while tu < max_t:
+                tu += interval
+                if tu_i < len(self.data_array):
+                    while tu_i < len(self.data_array) and self.data_array[tu_i][time_field] < tu:
+                        if self.data_array[tu_i][clean_field] is None:
+                            self.data_array[tu_i][clean_field] = True
+                            to_remove += 1
+                        tu_i += 1
+
+                    if tu_i < len(self.data_array) and self.data_array[tu_i][time_field] >= tu:
+                        if self.data_array[tu_i][clean_field] is None:
+                            self.data_array[tu_i][clean_field] = False
+                        tu = self.data_array[tu_i][time_field]
+            return to_remove
 
 class Console:
     # staticvariable
@@ -1400,8 +1499,8 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
         Console.print_asterisked("Backup is done, full time is:" + str(summ_time))
 
 
-def sweep(variants, verbose=False):
-    Console.print_asterisked("Starting sweeping")
+def sweep(variants, verbose=False, imitate=False):
+    Console.print_asterisked("Starting sweeping{}".format(" IMITATING, NO ACTUALLY REMOVING DATA" if imitate else ""))
     for variant_name in variants:
         try:
             variant = copy.deepcopy(variants[variant_name])
@@ -1415,21 +1514,40 @@ def sweep(variants, verbose=False):
                 variant["dest"]["path"], variant["dest"]["host"], dates_as_integer=True
             )
             now = datetime.datetime.now().timestamp()
-            dirs_by_intervals = {}
+
             for i in range(len(dirs)):
                 dirs[i]["time_from_now"] = int(now - dirs[i]['date'])
-                sweep_conf.get_sweep_conf_by_timestamp(dirs[i]["time_from_now"]).data_array.append(dirs[i])
-
-            print("Items: {}".format(len(dirs)))
+                swc = sweep_conf.get_sweep_conf_by_timestamp(dirs[i]["time_from_now"])
+                if swc:
+                    swc.data_array.append(dirs[i])
 
             for swcl in sweep_conf.parsed_sweep_conf:
-                print(swcl.period.get_seconds(), swcl.interval.get_seconds_between())
+                print(swcl.get_conf_decription())
                 if swcl.data_array:
-                    print("    Items: " + str(len(swcl.data_array)))
-                    print("    " + "\n    ".join([str(x) for x in swcl.data_array]))
+                    swcl.data_array = sorted(swcl.data_array, key=lambda item: item['time_from_now'])
+                    to_remove = swcl.sweep_data_items("time_from_now", "to_remove")
+                    if verbose:
+                        print("    Found items:")
+                        for i in range(len(swcl.data_array)):
+                            print("        item: {}, {}".format(
+                                swcl.data_array[i]['name'], "REMOVE" if swcl.data_array[i]['to_remove'] else "STAY"
+                                )
+                            )
+                    else:
+                        print("    Found data items:{}, items to remove:{}, items to stay:{}".format(
+                            len(swcl.data_array), to_remove, len(swcl.data_array) - to_remove)
+                        )
                 else:
-                    print("    No data in this interval")
+                    print("    No data items in this interval")
 
-        except Exception as e:
-            Log.error("Sweep of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
+        except TypeError as e:
+            Log.error(
+                "Sweep of variant `{}` error: {}:{} at {}:{}, skipping".format(
+                    variant_name,
+                    str(type(e)),
+                    str(e),
+                    os.path.split(sys.exc_info()[-1].tb_frame.f_code.co_filename)[1],
+                    sys.exc_info()[-1].tb_lineno
+                )
+            )
             ravenClient().capture_exceptions(e)

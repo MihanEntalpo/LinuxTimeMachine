@@ -213,13 +213,20 @@ def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
     "--verbose", "-v", default=False, is_flag=True, help="Display verbose sweep info"
 )
 @click.option(
+    "--imitate", "-i", default=False, is_flag=True, help="Imitate action, don't actually remove data"
+)
+@click.option(
     "--here", "-h", default=False, is_flag=True, help="Try to use use config, that have relation to current location"
 )
 @click.option(
     "--mainconf", "-mc", type=click.STRING, metavar="<main config file>",
     help="File with main config options, if not specified, default values are used", default=""
 )
-def sweep(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
+def sweep(conf_dir, conf, run, dontrun, verbose, imitate, here, mainconf=""):
+    """
+    Run sweep (cleaning of old backup data items.
+    Configuration should be set in section "sweep" of variant.
+    """
     MainConf.I(mainconf if mainconf else None)
 
     confs = process_variants(conf_dir, conf, run, dontrun, here)
@@ -227,7 +234,7 @@ def sweep(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
     print("variants to sweep:{}".format(len(confs)))
 
     if confs and len(confs):
-        sweep_go(confs, verbose)
+        sweep_go(confs, verbose, imitate)
 
 if __name__ == "__main__":
     cli(obj={})
