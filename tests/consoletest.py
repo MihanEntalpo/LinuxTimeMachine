@@ -164,10 +164,10 @@ class ConsoleTestCase(unittest.TestCase):
 
     def test_rm(self):
         tempname = self.get_random_file()
-        remove_non_existent_ret = Console.rm(tempname)
+        remove_non_existent_ret = Console.rm_file(tempname)
         with open(tempname, "w") as f:
             f.write("test")
-        remove_existent_ret = Console.rm(tempname)
+        remove_existent_ret = Console.rm_file(tempname)
 
         self.assertTrue(remove_existent_ret)
         self.assertFalse(remove_non_existent_ret)

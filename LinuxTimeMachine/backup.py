@@ -287,15 +287,32 @@ class Console:
     _checked_dest_folders = {}
 
     @staticmethod
-    def rm(path, host="", check=False):
+    def rm_file(path, host="", check=False):
         """
         Remove file from local or remote host. Just a single file!
         :param path: str file path
         :param host: str ssh-host
-        :param check: bool check, if rm successfull, throw excetion otherwise
+        :param check: bool check, if rm_file successfull, throw excetion otherwise
         :return:
         """
         cmd = Console.cmd(Console.list2cmdline(["rm", path]), host) + " 2> /dev/null"
+        Log.debug("Command: " + cmd)
+        res = Console.call_shell(cmd) == 0
+        if check:
+            if Console.check_file_exists(path, host):
+                raise exceptions.RemoveFileNotSuccessfull(path, host)
+        return res
+
+    @staticmethod
+    def rm_dir(path, host="", check=False):
+        """
+        Remove dir recursively from local or remote host
+        :param path: str dir path
+        :param host: str ssh-host
+        :param check: bool check, if rm_dir successfull, throw excetion otherwise
+        :return:
+        """
+        cmd = Console.cmd(Console.list2cmdline(["rm", "-rf", path]), host) + " 2> /dev/null"
         Log.debug("Command: " + cmd)
         res = Console.call_shell(cmd) == 0
         if check:
@@ -829,7 +846,7 @@ class Mysql:
         """
         Log.info("Removing dump from: " + root_folder)
         Console.call_shell(
-            Console.cmd("find '" + root_folder + "' -type f -name *.sql -exec rm {} \;", self.sshhost)
+            Console.cmd("find '" + root_folder + "' -type f -name *.sql -exec rm_file {} \;", self.sshhost)
         )
         Console.call_shell(
             Console.cmd("find '" + root_folder + "' -type d -empty -delete")
@@ -1003,7 +1020,7 @@ class Mysql:
                     old_info[db][tbl][file] = {"update_date":update_date, "checksum":checksum}
 
         Log.info("Existing dump data harvested")
-        Console.rm(bash_file, self.sshhost)
+        Console.rm_file(bash_file, self.sshhost)
 
         return old_info
 
@@ -1388,7 +1405,7 @@ class Rsync:
             params['dest_path'] + "/" + params["cur_tmp_dir"], params['dest_path'] + "/" + params['date'], dest['host']
         )
 
-        Console.rm(params['dest_path'] + "/Latest", dest['host'])
+        Console.rm_file(params['dest_path'] + "/Latest", dest['host'])
 
         ln_cmd = Console.cmd(
             Console.list2cmdline(
@@ -1513,24 +1530,30 @@ def sweep(variants, verbose=False, imitate=False):
             dirs = Console.get_backup_dirs_with_dates(
                 variant["dest"]["path"], variant["dest"]["host"], dates_as_integer=True
             )
-            now = datetime.datetime.now().timestamp()
+
+            if dirs and len(dirs) > 0:
+                newest = dirs[0]['date']
+            else:
+                newest = datetime.datetime.now().timestamp()
 
             for i in range(len(dirs)):
-                dirs[i]["time_from_now"] = int(now - dirs[i]['date'])
+                dirs[i]["time_from_now"] = int(newest - dirs[i]['date'])
                 swc = sweep_conf.get_sweep_conf_by_timestamp(dirs[i]["time_from_now"])
                 if swc:
                     swc.data_array.append(dirs[i])
 
+            to_remove_cnt = 0
             for swcl in sweep_conf.parsed_sweep_conf:
                 print(swcl.get_conf_decription())
                 if swcl.data_array:
                     swcl.data_array = sorted(swcl.data_array, key=lambda item: item['time_from_now'])
                     to_remove = swcl.sweep_data_items("time_from_now", "to_remove")
+                    to_remove_cnt += to_remove
                     if verbose:
                         print("    Found items:")
                         for i in range(len(swcl.data_array)):
                             print("        item: {}, {}".format(
-                                swcl.data_array[i]['name'], "REMOVE" if swcl.data_array[i]['to_remove'] else "STAY"
+                                swcl.data_array[i]['name'], "REMOVE" if swcl.data_array[i]['to_remove'] else "KEEP"
                                 )
                             )
                     else:
@@ -1539,6 +1562,26 @@ def sweep(variants, verbose=False, imitate=False):
                         )
                 else:
                     print("    No data items in this interval")
+
+            if to_remove_cnt > 0:
+
+                if not imitate:
+
+                    print("Removing data items...")
+                    removed_cnt = 0
+                    for swcl in reversed(sweep_conf.parsed_sweep_conf):
+                        for i in reversed(range(len(swcl.data_array))):
+                            item = swcl.data_array[i]
+                            if item['to_remove']:
+                                removed_cnt += 1
+                                if verbose:
+                                    print("Removing {} ({} of {})".format(item['name'], removed_cnt, to_remove_cnt))
+                                Console.rm_dir(variant["dest"]["path"] + "/" + item['name'], variant["dest"]["host"])
+                else:
+                    print("Not removing data items, caused by --imitate flag")
+            else:
+                print("Everything clean, nothing to remove")
+
 
         except TypeError as e:
             Log.error(
