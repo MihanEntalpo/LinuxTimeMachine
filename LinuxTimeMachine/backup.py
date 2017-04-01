@@ -1521,7 +1521,11 @@ def sweep(variants, verbose=False, imitate=False):
     for variant_name in variants:
         try:
             variant = copy.deepcopy(variants[variant_name])
-            sweep_conf = SweepConfList(variant.get("sweep", None))
+            sweep_params = variant.get("sweep", [])
+            if sweep_params == "default":
+                sweep_params = MainConf.I().default_sweep
+
+            sweep_conf = SweepConfList(sweep_params)
 
             if len(sweep_conf.parsed_sweep_conf) == 0:
                 print("Sweep for variant `{}` isn't configured".format(variant_name))

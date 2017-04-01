@@ -55,6 +55,7 @@ class MainConf:
         if confFile is not None:
             self.readConf(confFile)
         self.raven_dsn = self.conf.get("raven_dsn", "")
+        self.default_sweep = self.conf.get("default_sweep", [])
         self.loglevel = self.conf.get("loglevel", "INFO")
         Log.I(self.loglevel, sys.stdout, True)
         if self.raven_dsn:
