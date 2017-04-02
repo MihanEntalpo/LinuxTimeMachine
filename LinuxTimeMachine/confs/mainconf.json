@@ -1,0 +1,11 @@
+{
+    "raven_dsn_": "test",
+    "default_sweep": {
+        "last day": "all",
+        "last week": "2 per day",
+        "last month": "1 per day",
+        "last 3 months": "1 per 2 days",
+        "last 6 months": "1 per week",
+        "last year":"1 per month"
+    }
+}
