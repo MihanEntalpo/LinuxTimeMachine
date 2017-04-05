@@ -13,7 +13,7 @@ Required packages: pexpect, pyyaml, json
 TimeMachineVersion = 1
 
 __version__ = str(TimeMachineVersion)
-__license__ = """Copyright (c) 2000-2016, Mihanentalpo, All rights reserved.
+__license__ = """Copyright (c) 2000-2017, Mihanentalpo, All rights reserved.
 Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
 * Redistributions of source code must retain the above copyright notice,
@@ -92,25 +92,34 @@ class LastSweepPeriod():
         self.src_string = str_period
         period_matches = {}
         if not Tools.re_match(
-            "^last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?$",
+            "^(last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?)|(?P<other>all others?)$",
             str_period.strip(),
             period_matches
         ):
             raise exceptions.BadSweepConf(
                 (
                     "Error on sweep conf, period string is:'{}', "
-                    + "but it should be like 'last [N] [hour|month|day|week|year]'"
+                    + "but it should be like 'last [N] [hour|month|day|week|year]', or "
+                    + "'all other' for all items, not suited in other periods"
                 ).format(str_period)
             )
+        self.all_other = (period_matches['other'] is not None)
 
-        if period_matches["num"] is None:
-            period_matches["num"] = 1
+        if self.all_other:
+            self.num = 90000
+            self.unit = "year"
         else:
-            period_matches["num"] = Tools.toFloat(period_matches["num"])
-        self.num = Tools.toFloat(period_matches['num'])
-        self.unit = period_matches['unit']
+            if period_matches["num"] is None:
+                period_matches["num"] = 1
+            else:
+                period_matches["num"] = Tools.toFloat(period_matches["num"])
+            self.num = Tools.toFloat(period_matches['num'])
+            self.unit = period_matches['unit']
 
     def get_description(self):
+
+        if self.all_other:
+            return "all other"
 
         if self.num == 1:
             nums = ""
