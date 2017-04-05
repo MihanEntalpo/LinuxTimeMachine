@@ -1505,6 +1505,9 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
 
                 Console.print_asterisked("Rsync is started for variant `" + variant_name + "`")
 
+            if "sweep" in variant:
+                del variant["sweep"]
+
             rsync = Rsync()
 
             rsync.timemachine(callback=rsync_callback, **variant)
