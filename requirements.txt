@@ -1,4 +1,4 @@
-raven
-pyyaml
-pexpect
-yapsy
+raven==6.9.0
+pyyaml==3.12
+pexpect==4.6.0
+yapsy==1.11.223
