@@ -1,4 +1,4 @@
 raven==6.9.0
-pyyaml
+pyyaml==3.12
 pexpect
 yapsy
