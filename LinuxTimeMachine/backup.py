@@ -9,6 +9,24 @@ Required: Python 3.2 or later
 Required packages: pexpect, pyyaml, json
 
 """
+import copy
+import datetime
+import os
+import re
+import shlex
+import sys
+import time
+from collections import OrderedDict as Odict
+from logging import getLogger
+from subprocess import call, Popen, PIPE, check_output
+
+import pexpect
+from yapsy.PluginManager import PluginManager
+
+from . import exceptions
+from .common import Log
+from .common import Tools
+from .conf import ravenClient
 
 TimeMachineVersion = 1
 
@@ -33,30 +51,6 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE."""
 
-from . import exceptions
-from .conf import MainConf, ravenClient
-from .conf import Conf
-from .common import Log
-from .common import Tools
-
-import sys
-import os
-import re
-import datetime
-import time
-import pexpect
-import copy
-import shlex
-import json
-import yaml
-import types
-import logging
-from collections import OrderedDict as Odict
-from io import StringIO
-from subprocess import call, Popen, PIPE, check_output
-from yapsy.PluginManager import PluginManager
-from operator import itemgetter
-
 
 class Plugins:
     def __init__(self):
@@ -64,231 +58,6 @@ class Plugins:
         self.manager.setPluginPlaces([Tools.get_here_path() + "/plugins"])
         self.manager.collectPlugins()
 
-
-class SweepConfList():
-    """
-    Список строк конфигурации частоты копий
-    """
-    def __init__(self, sweep_dict):
-        self.parsed_sweep_conf = []
-        for period_str in sweep_dict:
-            line = SweepConfLine(period_str, sweep_dict[period_str])
-            self.parsed_sweep_conf.append(line)
-
-        self.parsed_sweep_conf = sorted(self.parsed_sweep_conf, key=lambda scl: scl.period.get_days())
-
-    def get_sweep_conf_by_timestamp(self, timestamp):
-        for sweep_conf in self.parsed_sweep_conf:
-            if sweep_conf.period.get_seconds() > timestamp:
-                return sweep_conf
-
-
-class LastSweepPeriod():
-    """
-    Класс, определяющий период с текущего момента, в течении которого действует правило на интервал резервных копий.
-    Период формируется из строки вида "last 4 days", "last 1 year" и так далее.
-    """
-    def __init__(self, str_period):
-        self.src_string = str_period
-        period_matches = {}
-        if not Tools.re_match(
-            "^(last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?)|(?P<other>all others?)$",
-            str_period.strip(),
-            period_matches
-        ):
-            raise exceptions.BadSweepConf(
-                (
-                    "Error on sweep conf, period string is:'{}', "
-                    + "but it should be like 'last [N] [hour|month|day|week|year]', or "
-                    + "'all other' for all items, not suited in other periods"
-                ).format(str_period)
-            )
-        self.all_other = (period_matches['other'] is not None)
-
-        if self.all_other:
-            self.num = 90000
-            self.unit = "year"
-        else:
-            if period_matches["num"] is None:
-                period_matches["num"] = 1
-            else:
-                period_matches["num"] = Tools.toFloat(period_matches["num"])
-            self.num = Tools.toFloat(period_matches['num'])
-            self.unit = period_matches['unit']
-
-    def get_description(self):
-
-        if self.all_other:
-            return "all other"
-
-        if self.num == 1:
-            nums = ""
-        elif self.num==int(self.num):
-            nums = str(int(self.num))
-        else:
-            nums = str(self.num)
-
-        units = self.unit
-        if self.num > 1:
-            units += "s"
-        if self.num != 1:
-            units = " " + units
-
-        return "last {}{}".format(nums, units)
-
-    def get_days(self):
-        last_days = 0
-        if self.unit == "day":
-            last_days = self.num
-        elif self.unit == "week":
-            last_days = self.num * 7
-        elif self.unit == "month":
-            last_days = self.num * 365.2425 / 12
-        elif self.unit == "year":
-            last_days = self.num * 365.2425
-        return last_days
-
-    def get_seconds(self):
-        return self.get_days() * 3600 * 24
-
-
-class SweepInterval():
-    """
-    Класс интервала очистки, т.е. минимального интервала между двумя соседними резервными копиями,
-    меньше которого не должно быть
-    """
-    def __init__(self, str_interval):
-        self.src_string = str_interval
-
-        interval_matches = {}
-        if not Tools.re_match(
-            "^(?P<all>all)|((?P<items>[0-9\.]+)\ per\ (?P<num>[0-9\.]+)?\ ?(?P<unit>hour|year|month|day|week)s?)$",
-                str_interval,
-            interval_matches
-        ):
-            raise exceptions.BadSweepConf(
-                (
-                    "Error on sweep conf, interval string is:'{}', "
-                    + "but it should be like 'all' or '[N] per [M] [hour|month|day|week|year]'"
-                ).format(str_interval)
-            )
-
-        interval_days = 0
-
-        self.is_all = True if interval_matches['all'] else False
-
-        if interval_matches["num"] is None:
-            interval_matches["num"] = 1
-
-        self.items = Tools.toFloat(interval_matches['items'])
-        self.num = Tools.toFloat(interval_matches["num"])
-        self.unit = interval_matches['unit']
-
-    def get_description(self):
-        if self.is_all:
-            return "all items"
-        else:
-            items = self.items if int(self.items) != self.items else int(self.items)
-            num = self.num if int(self.num) != self.num else int(self.num)
-            units = self.unit
-            if self.num == 1:
-                num = ""
-            else:
-                units = " " + units + "s"
-
-            return "{} items per {}{}".format(items, num, units)
-
-
-    def get_seconds_between(self):
-        sec = 0
-        if self.is_all:
-            sec = 1
-        elif self.unit == "hour":
-            sec = self.num * 3600 / self.items
-        elif self.unit == "day":
-            sec = self.num * 24 * 3600 / self.items
-        elif self.unit == "week":
-            sec = self.num * 24 * 3600 * 7 / self.items
-        elif self.unit == "month":
-            sec = Tools.toFloat(self.num) * (365.2425 / 12) * 24 * 3600 / self.items
-        elif self.unit == "year":
-            sec = Tools.toFloat(self.num) * 365.2425 * 24 * 3600 / self.items
-        return sec
-
-
-class SweepConfLine:
-    """
-    Класс строки конфигурации прореживания бэкапов
-    """
-    def __init__(self, last_period_str, interval_str):
-        self.interval = SweepInterval(interval_str)
-        self.period = LastSweepPeriod(last_period_str)
-        self.data_array = []
-
-    def get_conf_decription(self):
-        return "For {} keep {}".format(
-            self.period.get_description(),
-            self.interval.get_description()
-        )
-
-    def sweep_data_items(self, time_field, clean_field):
-        to_remove = 0
-
-        center = 0
-        min_t = 999999999999
-        max_t = 0
-        for i in range(len(self.data_array)):
-            self.data_array[i][clean_field] = None
-            center += self.data_array[i][time_field] / len(self.data_array)
-            min_t = min(min_t, self.data_array[i][time_field])
-            max_t = max(max_t, self.data_array[i][time_field])
-
-        center = int(center)
-
-        interval = self.interval.get_seconds_between()
-
-        #print("center:", center, "min:", min_t, "max:", max_t, "amplitude:", max_t - min_t, "interval:", interval)
-
-        if interval > 0:
-            central_node_i, central_node_value = min(enumerate(self.data_array), key=lambda x: abs(x[1][time_field] - center))
-            #print("central_node_i", central_node_i, "central_node_value", central_node_value[time_field])
-
-            central_node_value[clean_field] = False
-
-            td_i = central_node_i
-            tu_i = central_node_i
-
-            td = central_node_value[time_field]
-            tu = central_node_value[time_field]
-
-            while td > min_t:
-                td -= interval
-                if td_i >= 0:
-                    while td_i >= 0 and self.data_array[td_i][time_field] > td:
-                        if self.data_array[td_i][clean_field] is None:
-                            self.data_array[td_i][clean_field] = True
-                            to_remove += 1
-                        td_i -= 1
-
-                    if td_i >=0 and self.data_array[td_i][time_field] <= td:
-                        if self.data_array[td_i][clean_field] is None:
-                            self.data_array[td_i][clean_field] = False
-                        td = self.data_array[td_i][time_field]
-
-            while tu < max_t:
-                tu += interval
-                if tu_i < len(self.data_array):
-                    while tu_i < len(self.data_array) and self.data_array[tu_i][time_field] < tu:
-                        if self.data_array[tu_i][clean_field] is None:
-                            self.data_array[tu_i][clean_field] = True
-                            to_remove += 1
-                        tu_i += 1
-
-                    if tu_i < len(self.data_array) and self.data_array[tu_i][time_field] >= tu:
-                        if self.data_array[tu_i][clean_field] is None:
-                            self.data_array[tu_i][clean_field] = False
-                        tu = self.data_array[tu_i][time_field]
-            return to_remove
 
 class Console:
     # staticvariable
@@ -339,17 +108,15 @@ class Console:
         elif res == 0:
             return True
 
-
     @staticmethod
     def get_backup_dirs_with_dates(path, host="", dates_as_integer=False):
         return [
             {
-                "name":dir_name,
+                "name": dir_name,
                 "date": Console.get_datetime_of_dirname(dir_name, dates_as_integer)
             }
             for dir_name in Console.get_backup_dirs(path, host)
         ]
-
 
     @staticmethod
     def get_backup_dirs(path, host=""):
@@ -391,7 +158,7 @@ class Console:
             raise e
 
         backup_dirs = sorted([
-            d[len(path)+1:] for d in raw_dirs if d
+            d[len(path) + 1:] for d in raw_dirs if d
         ], reverse=True)
 
         return backup_dirs
@@ -463,7 +230,7 @@ class Console:
                 Log.debug("Child returned" + str(retcode))
         except OSError as e:
             retcode = -1
-            Log.error("Execution failed: " +  str(e))
+            Log.error("Execution failed: " + str(e))
         return retcode
 
     @staticmethod
@@ -491,7 +258,6 @@ class Console:
         Log.info("Testing for src folder : " + src_path)
         res = Console.check_file_exists(src_path, src_host)
         return res
-
 
     @staticmethod
     def print_asterisked(text):
@@ -572,7 +338,7 @@ class Console:
                 "ssh_first_connect": "Are you sure you want to continue connecting",
                 "ssh_password_required": "s password:",
                 "ssh_connection_timedout": "Connection timed out",
-                "ssh_host_key_changed":"WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED",
+                "ssh_host_key_changed": "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED",
                 "ok": "testmessage",
                 "eof": pexpect.EOF
             })
@@ -581,7 +347,8 @@ class Console:
                 result = exceptions.SshError("ssh cannot connect automatically, message: " + data)
             elif res == "ssh_host_key_changed":
                 data = p.before.decode("UTF-8")
-                result = exceptions.SshError("ssh cannot connect, REMOTE HOST IDENTIFICATION HAS CHANGED, message: " + data)
+                result = exceptions.SshError(
+                    "ssh cannot connect, REMOTE HOST IDENTIFICATION HAS CHANGED, message: " + data)
             elif res == "ok":
                 result = True
             elif res == pexpect.EOF:
@@ -681,7 +448,7 @@ class Mysql:
         self.remove_dbs = ["TABLE_SCHEMA", "information_schema", "mysql", "performance_schema"]
         self.remove_tables = []
 
-    def query(self, query):
+    def query(self, query, timeout=60):
         """
         Execute SQL query and return results. Query is executed with use of console mysql client on a host.
         Result returned in form, used by console mysql client, no parsing is made, so result should be parsed manually
@@ -694,8 +461,11 @@ class Mysql:
 
         cmd = Console.cmd(Console.list2cmdline(["mysql", "-u" + self.user, "-p", "-e", query]), self.sshhost)
 
+        Log.debug("Mysql.query: " + str(query))
+        Log.debug("Mysql.query cmd: " + cmd)
+
         try:
-            p = pexpect.spawn(cmd, timeout=60)
+            p = pexpect.spawn(cmd, timeout=timeout)
             res = Console.p_expect(p, pexvs, ssh=(self.sshhost != ""))
             if res == "mysql_pass":
                 p.sendline(self.password)
@@ -708,7 +478,7 @@ class Mysql:
                 data = p.before.decode("UTF-8")
                 raise exceptions.MysqlError("Error while calling mysql: " + data)
         except pexpect.TIMEOUT as e:
-            raise exceptions.Timeout()
+            raise exceptions.Timeout(f"command caused timeout: {cmd}")
 
     def fill_cached_update_time(self):
         """
@@ -718,11 +488,11 @@ class Mysql:
         """
         Log.info("Filling cached update time")
         data = self.query(
-                'USE  information_schema; ' +
-                'SELECT CONCAT("&", table_schema, "&") as db, ' +
-                'CONCAT("&", table_name, "&") as tbl, ' +
-                'CONCAT("&", IFNULL(update_time, create_time), "&") as update_date ' +
-                'FROM `TABLES`'
+            'USE  information_schema; ' +
+            'SELECT CONCAT("&", table_schema, "&") as db, ' +
+            'CONCAT("&", table_name, "&") as tbl, ' +
+            'CONCAT("&", IFNULL(update_time, create_time), "&") as update_date ' +
+            'FROM `TABLES`'
         )
         lines = data.split("\r\n")
         line_re = re.compile("&(?P<db>.*?)&.*?&(?P<tbl>.*?)&.*?&(?P<update_date>.*?)&")
@@ -754,11 +524,13 @@ class Mysql:
             for tbl in dbs_tbls[db]:
                 dbtbl = "`{}`.`{}`".format(db, tbl)
                 num2tbls.append(dbtbl)
-                result_parts["{}.{}".format(db,tbl)] = [db, tbl]
+                result_parts["{}.{}".format(db, tbl)] = [db, tbl]
 
         query = "CHECKSUM TABLE " + ", ".join(num2tbls) + " EXTENDED;";
 
-        checksums = self.query(query)
+        Log.info(f"Computing checksums of {len(num2tbls)} mysql tables ...")
+
+        checksums = self.query(query, timeout=len(num2tbls) * 5)
 
         dbs = {}
 
@@ -861,7 +633,6 @@ class Mysql:
             Console.cmd("find '" + root_folder + "' -type d -empty -delete")
         )
 
-
     def dump_dbs(self, dbs, root_folder, force_dump_intact=False):
         """
         Run mysql_dump of databases. Fully aoutmatic wrapper around call_dump method
@@ -902,7 +673,7 @@ class Mysql:
                 table_old_update_date = None
                 table_old_checksum = None
 
-            #if table_old_update_date == table_update_date and not force_dump_intact:
+            # if table_old_update_date == table_update_date and not force_dump_intact:
             #    return None
             if str(table_old_checksum) == str(table_checksum):
                 if table_old_update_date == table_update_date:
@@ -921,19 +692,19 @@ class Mysql:
 
             param_array += [db, tbl]
             params = {
-                "options":" -r " + Console.list2cmdline([filename]) + " " + Console.list2cmdline(param_array),
-                "cmd_after":("echo -e '-- LTMINFO: TMVERSION:#{version}# " +
-                                    " DB:#{db}#" +
-                                    " TBL:#{tbl}#" +
-                                    " TABLEUPDATEDATE:#{date}#" +
-                                    " TABLECHECKSUM:#{checksum}#" +
-                                    "' >> {filename}").format(
-                                        date=table_update_date,
-                                        filename=filename,
-                                        version=TimeMachineVersion,
-                                        tbl=tbl,
-                                        checksum=table_checksum,
-                                        db=db
+                "options": " -r " + Console.list2cmdline([filename]) + " " + Console.list2cmdline(param_array),
+                "cmd_after": ("echo -e '-- LTMINFO: TMVERSION:#{version}# " +
+                              " DB:#{db}#" +
+                              " TBL:#{tbl}#" +
+                              " TABLEUPDATEDATE:#{date}#" +
+                              " TABLECHECKSUM:#{checksum}#" +
+                              "' >> {filename}").format(
+                    date=table_update_date,
+                    filename=filename,
+                    version=TimeMachineVersion,
+                    tbl=tbl,
+                    checksum=table_checksum,
+                    db=db
                 )
             }
             return params
@@ -969,8 +740,8 @@ class Mysql:
 
             for tbl in dbs[db]:
                 call_dump(folder + "/" + tbl + ".complete.sql", tbl, db, True, True)
-                #call_dump(folder + "/" + tbl + ".structure.sql", tbl, db, False, True)
-                #call_dump(folder + "/" + tbl + ".data.sql", tbl, db, True, False)
+                # call_dump(folder + "/" + tbl + ".structure.sql", tbl, db, False, True)
+                # call_dump(folder + "/" + tbl + ".data.sql", tbl, db, True, False)
 
     def get_old_dump_info(self, folder):
         """
@@ -1010,7 +781,8 @@ class Mysql:
         cmd = Console.cmd(" bash '" + bash_file + "'", self.sshhost)
 
         result = Console.call_shell_and_return(cmd).decode("UTF-8").split("\n")
-        reg = re.compile("INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# (TABLECHECKSUM:#(?P<TABLECHECKSUM>[^#]+)# )?\ ?FILE:#(?P<FILE>[^#]+)#")
+        reg = re.compile(
+            "INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# (TABLECHECKSUM:#(?P<TABLECHECKSUM>[^#]+)# )?\ ?FILE:#(?P<FILE>[^#]+)#")
         for line in result:
             matches = reg.search(line)
             if matches:
@@ -1026,7 +798,7 @@ class Mysql:
                         old_info[db] = {}
                     if tbl not in old_info[db]:
                         old_info[db][tbl] = {}
-                    old_info[db][tbl][file] = {"update_date":update_date, "checksum":checksum}
+                    old_info[db][tbl][file] = {"update_date": update_date, "checksum": checksum}
 
         Log.info("Existing dump data harvested")
         Console.rm_file(bash_file, self.sshhost)
@@ -1043,8 +815,8 @@ class Mysql:
         Console.check_ssh_or_throw(self.sshhost)
         Log.info("Quering for all databases and tables list")
         result_raw = self.query(
-                'USE information_schema; SELECT CONCAT("&", TABLE_SCHEMA, "&") as db,' +
-                ' CONCAT("&", TABLE_NAME, "&") as tbl FROM TABLES'
+            'USE information_schema; SELECT CONCAT("&", TABLE_SCHEMA, "&") as db,' +
+            ' CONCAT("&", TABLE_NAME, "&") as tbl FROM TABLES'
         )
         result_lines = result_raw.split("\r\n")
         re_line = re.compile("&(?P<database>.*?)&.*?&(?P<table>.*?)&")
@@ -1095,7 +867,7 @@ class Mysql:
             if action not in ["include", "exclude"]:
                 raise Exception("first element of filters Rule must be 'include' or 'exclude'")
 
-            assert(type(db_raw).__name__ == "str")
+            assert (type(db_raw).__name__ == "str")
 
             if (db_raw == "*"):
                 db_raw = ".*"
@@ -1106,7 +878,7 @@ class Mysql:
 
             tables = []
             for table in tables_raw:
-                assert(type(table).__name__ == "str")
+                assert (type(table).__name__ == "str")
                 if table == "*":
                     table = ".*"
                 tables.append(re.compile("^" + table + "$"))
@@ -1135,6 +907,7 @@ class Rsync:
     """
     Class, used to run Rsync
     """
+
     def __init__(self):
         """
         Init function.
@@ -1229,14 +1002,15 @@ class Rsync:
         if data['type'] == "progress":
             try:
                 speed = data['speed']
-                if speed > 1024**3:
-                    data['speed'] = str(round(speed / (1024**3), 2)) + "GB/s"
-                elif speed > 1024**2:
-                    data['speed'] = str(round(speed / (1024**2), 2)) + "MB/s"
+                if speed > 1024 ** 3:
+                    data['speed'] = str(round(speed / (1024 ** 3), 2)) + "GB/s"
+                elif speed > 1024 ** 2:
+                    data['speed'] = str(round(speed / (1024 ** 2), 2)) + "MB/s"
                 elif speed > 1024:
                     data['speed'] = str(round(speed / (1024), 2)) + "KB/s"
                 if data['ir_chk_top'] and data['ir_chk_bottom']:
-                    Log.info("Progress:{progress}%, checked {ir_chk_top} / {ir_chk_bottom}, speed: {speed}".format(**data))
+                    Log.info(
+                        "Progress:{progress}%, checked {ir_chk_top} / {ir_chk_bottom}, speed: {speed}".format(**data))
                 else:
                     Log.info("Progress:{progress}%, speed: {speed}".format(**data))
             except Exception as e:
@@ -1408,7 +1182,7 @@ class Rsync:
         self.use_exists_progress_folders(dest['path'], dest['host'], params['cur_tmp_dir'])
 
         self.go(("rsync -axv --info=progress2 --delete {exclude_str} "
-                + "--link-dest='{latest_dir}' '{src_full}' '{dest_full}/{cur_tmp_dir}'").format(**params), callback)
+                 + "--link-dest='{latest_dir}' '{src_full}' '{dest_full}/{cur_tmp_dir}'").format(**params), callback)
 
         Console.mv(
             params['dest_path'] + "/" + params["cur_tmp_dir"], params['dest_path'] + "/" + params['date'], dest['host']
@@ -1423,7 +1197,6 @@ class Rsync:
         )
 
         Console.call_shell(ln_cmd)
-
 
 
 def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
@@ -1454,7 +1227,7 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
     :return:
     """
 
-    assert(type(variants) in [dict, Odict])
+    assert (type(variants) in [dict, Odict])
     summ_time = 0
     for variant_name in variants:
         try:
@@ -1469,23 +1242,25 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
             if "min_timedelta" in variant:
                 min_timedelta = Tools.make_time_delta(variant["min_timedelta"])
                 Log.info("Min timedelta is: " + str(min_timedelta))
-                lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'], variant['dest']['host'])
+                lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'],
+                                                                        variant['dest']['host'])
                 Log.info("Last backup timedelta is: " + str(lastbackup_timedelta))
                 if lastbackup_timedelta > min_timedelta:
                     Log.info("Last backup was further when min timedelta, continue to backup")
                 else:
-                    Console.print_asterisked("Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
+                    Console.print_asterisked(
+                        "Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
                     continue
                 del variant["min_timedelta"]
 
             if "mysqldump" in variant:
                 mysqldump = variant['mysqldump']
-                assert(type(mysqldump) == dict)
-                assert("user" in mysqldump)
-                assert("password" in mysqldump)
-                assert("sshhost" in mysqldump)
-                assert("filters" in mysqldump)
-                assert("folder" in mysqldump)
+                assert (type(mysqldump) == dict)
+                assert ("user" in mysqldump)
+                assert ("password" in mysqldump)
+                assert ("sshhost" in mysqldump)
+                assert ("filters" in mysqldump)
+                assert ("folder" in mysqldump)
                 del variant['mysqldump']
 
                 remove_after_backup = mysqldump.get("remove_after_backup", False)
@@ -1528,85 +1303,3 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
         Console.print_asterisked("Backup is done, full time is:" + str(summ_time))
 
 
-def sweep(variants, verbose=False, imitate=False):
-    Console.print_asterisked("Starting sweeping{}".format(" IMITATING, NO ACTUALLY REMOVING DATA" if imitate else ""))
-    for variant_name in variants:
-        try:
-            variant = copy.deepcopy(variants[variant_name])
-            sweep_params = variant.get("sweep", [])
-            if sweep_params == "default":
-                sweep_params = MainConf.I().default_sweep
-
-            sweep_conf = SweepConfList(sweep_params)
-
-            if len(sweep_conf.parsed_sweep_conf) == 0:
-                print("Sweep for variant `{}` isn't configured".format(variant_name))
-                continue
-
-            dirs = Console.get_backup_dirs_with_dates(
-                variant["dest"]["path"], variant["dest"]["host"], dates_as_integer=True
-            )
-
-            if dirs and len(dirs) > 0:
-                newest = dirs[0]['date']
-            else:
-                newest = datetime.datetime.now().timestamp()
-
-            for i in range(len(dirs)):
-                dirs[i]["time_from_now"] = int(newest - dirs[i]['date'])
-                swc = sweep_conf.get_sweep_conf_by_timestamp(dirs[i]["time_from_now"])
-                if swc:
-                    swc.data_array.append(dirs[i])
-
-            to_remove_cnt = 0
-            for swcl in sweep_conf.parsed_sweep_conf:
-                print(swcl.get_conf_decription())
-                if swcl.data_array:
-                    swcl.data_array = sorted(swcl.data_array, key=lambda item: item['time_from_now'])
-                    to_remove = swcl.sweep_data_items("time_from_now", "to_remove")
-                    to_remove_cnt += to_remove
-                    if verbose:
-                        print("    Found items:")
-                        for i in range(len(swcl.data_array)):
-                            print("        item: {}, {}".format(
-                                swcl.data_array[i]['name'], "REMOVE" if swcl.data_array[i]['to_remove'] else "KEEP"
-                                )
-                            )
-                    else:
-                        print("    Found data items:{}, items to remove:{}, items to stay:{}".format(
-                            len(swcl.data_array), to_remove, len(swcl.data_array) - to_remove)
-                        )
-                else:
-                    print("    No data items in this interval")
-
-            if to_remove_cnt > 0:
-
-                if not imitate:
-
-                    print("Removing data items...")
-                    removed_cnt = 0
-                    for swcl in reversed(sweep_conf.parsed_sweep_conf):
-                        for i in reversed(range(len(swcl.data_array))):
-                            item = swcl.data_array[i]
-                            if item['to_remove']:
-                                removed_cnt += 1
-                                if verbose:
-                                    print("Removing {} ({} of {})".format(item['name'], removed_cnt, to_remove_cnt))
-                                Console.rm_dir(variant["dest"]["path"] + "/" + item['name'], variant["dest"]["host"])
-                else:
-                    print("Not removing data items, caused by --imitate flag")
-            else:
-                print("Everything clean, nothing to remove")
-
-
-        except TypeError as e:
-            Log.error(
-                "Sweep of variant `{}` error: {}:{} at {}:{}, skipping".format(
-                    variant_name,
-                    str(type(e)),
-                    str(e),
-                    os.path.split(sys.exc_info()[-1].tb_frame.f_code.co_filename)[1],
-                    sys.exc_info()[-1].tb_lineno
-                )
-            )
-            ravenClient().capture_exceptions(e)

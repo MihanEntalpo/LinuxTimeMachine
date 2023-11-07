@@ -10,3 +10,5 @@ dist/
 build/
 LinuxTimeMachine.egg-info/
 experiments/test_raven_conf.json
+/LinuxTimeMachine/confs/
+!/LinuxTimeMachine/confs/.gitkeep
