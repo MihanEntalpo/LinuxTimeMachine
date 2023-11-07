@@ -491,7 +491,7 @@ class Mysql:
                 p.read(len(self.password) + 1)
                 data = p.read().decode("UTF-8")
                 if re.search("ERROR\ [0-9]+.*?at line [0-9]+:", data):
-                    raise exceptions.MysqlError("MysqlError: " + data)
+                    raise exceptions.MysqlError("MysqlError: " + data + ", command was: " + cmd)
                 return data
             elif res == "eof":
                 data = p.before.decode("UTF-8")
