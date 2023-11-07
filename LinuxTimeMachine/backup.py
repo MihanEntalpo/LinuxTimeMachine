@@ -459,7 +459,26 @@ class Mysql:
         pexvs["mysql_pass"] = "Enter password:"
         pexvs["eof"] = pexpect.EOF
 
-        cmd = Console.cmd(Console.list2cmdline(["mysql", "-u" + self.user, "-p", "-e", query]), self.sshhost)
+        cmd = Console.cmd(
+            Console.list2cmdline(
+                [
+                    "/bin/bash",
+                    "-c",
+                    Console.cmd(
+                        Console.list2cmdline(
+                            [
+                                "mysql",
+                                "-u" + self.user,
+                                "-p",
+                                "-e",
+                                query
+                            ]
+                        ),
+                        self.sshhost
+                    )
+                ]
+            )
+        )
 
         Log.debug("Mysql.query: " + str(query))
         Log.debug("Mysql.query cmd: " + cmd)
@@ -478,7 +497,10 @@ class Mysql:
                 data = p.before.decode("UTF-8")
                 raise exceptions.MysqlError("Error while calling mysql: " + data)
         except pexpect.TIMEOUT as e:
-            raise exceptions.Timeout(f"command caused timeout: {cmd}")
+            raise exceptions.Timeout(f"command caused timeout: {cmd}") from e
+
+        except pexpect.exceptions.ExceptionPexpect as e:
+            raise exceptions.ConsoleError(f"error executing mysql query: {e}, command was: {cmd}")
 
     def fill_cached_update_time(self):
         """
