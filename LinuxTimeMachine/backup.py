@@ -473,11 +473,11 @@ class Mysql:
                                 "-e",
                                 query
                             ]
-                        ),
-                        self.sshhost
+                        )
                     )
                 ]
-            )
+            ),
+            self.sshhost
         )
 
         Log.debug("Mysql.query: " + str(query))
