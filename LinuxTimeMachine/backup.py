@@ -495,7 +495,7 @@ class Mysql:
                 return data
             elif res == "eof":
                 data = p.before.decode("UTF-8")
-                raise exceptions.MysqlError("Error while calling mysql: " + data)
+                raise exceptions.MysqlError("Error while calling mysql: " + data + ", command was: " + cmd)
         except pexpect.TIMEOUT as e:
             raise exceptions.Timeout(f"command caused timeout: {cmd}") from e
 
