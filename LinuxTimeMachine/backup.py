@@ -599,7 +599,7 @@ class Mysql:
 
         Log.info(cmd)
 
-        p = pexpect.spawn(cmd, timeout=90)
+        p = pexpect.spawn(cmd, timeout=300)
 
         res = Console.p_expect(p, pexvs, ssh=(self.sshhost != ""))
 
