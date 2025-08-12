@@ -1,6 +1,5 @@
 click==8.1.6
 pexpect==4.8.0
-ptyprocess==0.7.0
 PyYAML==6.0.1
 raven==6.10.0
-Yapsy==1.12.2
+yapsy==1.12.2
