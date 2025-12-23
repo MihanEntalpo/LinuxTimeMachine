@@ -180,7 +180,11 @@ def test():
     "--mainconf", "-mc", type=click.STRING, metavar="<main config file>",
     help="File with main config options, if not specified, default values are used", default=""
 )
-def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
+@click.option(
+    "--skip-frequency-check", "skip_frequency_check", default=False, is_flag=True,
+    help="Skip backup frequency check and run backup even if it was made recently",
+)
+def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf="", skip_frequency_check=False):
     """
     Start backup, configured by config files, places in ~/.config/LinuxTimeMachine/variants,
     or by command line parameters --cond_dir or --conf
@@ -192,7 +196,7 @@ def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
     print("variants to run:")
     print(json.dumps(confs, indent=4))
     if confs and len(confs):
-        backup_go(confs, verbose=verbose)
+        backup_go(confs, verbose=verbose, skip_frequency_check=skip_frequency_check)
     else:
         print("Where are no variants to run")
 

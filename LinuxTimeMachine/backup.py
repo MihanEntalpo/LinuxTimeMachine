@@ -1221,7 +1221,7 @@ class Rsync:
         Console.call_shell(ln_cmd)
 
 
-def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
+def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_frequency_check=False):
     """
     Run backup variants - full backup operation, include files and mysql (if needed) backup.
     :param variants: dict, contains backup variants. Keys of this dict is variant names, and values are dicts itself,
@@ -1264,15 +1264,18 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False):
             if "min_timedelta" in variant:
                 min_timedelta = Tools.make_time_delta(variant["min_timedelta"])
                 Log.info("Min timedelta is: " + str(min_timedelta))
-                lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'],
-                                                                        variant['dest']['host'])
-                Log.info("Last backup timedelta is: " + str(lastbackup_timedelta))
-                if lastbackup_timedelta > min_timedelta:
-                    Log.info("Last backup was further when min timedelta, continue to backup")
+                if skip_frequency_check:
+                    Log.info("Skip frequency check is enabled, continue to backup")
                 else:
-                    Console.print_asterisked(
-                        "Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
-                    continue
+                    lastbackup_timedelta = Console.get_lastbackup_timedelta(variant['dest']['path'],
+                                                                            variant['dest']['host'])
+                    Log.info("Last backup timedelta is: " + str(lastbackup_timedelta))
+                    if lastbackup_timedelta > min_timedelta:
+                        Log.info("Last backup was further when min timedelta, continue to backup")
+                    else:
+                        Console.print_asterisked(
+                            "Backup of variant `" + variant_name + "` is skipped, to high backup frequency")
+                        continue
                 del variant["min_timedelta"]
 
             if "mysqldump" in variant:

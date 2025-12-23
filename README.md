@@ -69,6 +69,13 @@ python cli.py list
 python cli.py backup --run site
 ```
 
+Если нужно запустить резервное копирование, игнорируя ограничение по минимальному
+интервалу между бэкапами (`min_timedelta`), добавьте флаг `--skip-frequency-check`:
+
+```bash
+python cli.py backup --run site --skip-frequency-check
+```
+
 Удаление устаревших копий:
 
 ```bash
