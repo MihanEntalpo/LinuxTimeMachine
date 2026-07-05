@@ -95,7 +95,7 @@ class Tools:
             delta = datetime.timedelta(**params)
         elif type(src) == str:
             matches = re.findall(
-                "(([0-9]+)\ *(days|weeks|hours|minutes|seconds|milliseconds|microseconds))",
+                r"(([0-9]+)\ *(days|weeks|hours|minutes|seconds|milliseconds|microseconds))",
                 re.sub("[,;]", " ", src)
             )
             params = {}

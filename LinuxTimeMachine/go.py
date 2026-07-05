@@ -3,6 +3,7 @@ from .conf import Conf
 from .backup import go as backup_go
 from LinuxTimeMachine.sweep import sweep as sweep_go
 from .conf import MainConf
+from .common import Log
 import click
 import os
 import re
@@ -16,19 +17,19 @@ def process_variants(conf_dir, conf, run, dontrun, here):
     confs = {}
 
     if here and len(run):
-        print("Error: --run and --here shouldn't be used together!")
+        Log.error("Error: --run and --here should not be used together")
         return None
 
     if len(conf):
         conf_files = [item.name for item in conf]
-        print("Using specified config files: {}".format(", ".join(conf_files)))
+        Log.info("Using specified config files: %s", ", ".join(conf_files))
         conf_data = Conf.read_conf_files(conf_files)
     elif conf_dir:
-        print("Using specified config folder '{}'".format(conf_dir))
+        Log.info("Using specified config folder `%s`", conf_dir)
         conf_data = Conf.read_conf_dir(conf_dir)
     else:
         dir = os.path.expanduser("~/.config/LinuxTimeMachine/variants")
-        print("Using default config folder '{}'".format(dir))
+        Log.info("Using default config folder `%s`", dir)
         if not os.path.exists(dir):
             os.makedirs(dir)
         conf_data = Conf.read_conf_dir(dir)
@@ -46,34 +47,30 @@ def process_variants(conf_dir, conf, run, dontrun, here):
                             path = os.path.realpath(conf_data[variant][x]['path'])
                             if os.path.commonprefix([path, herepath]) == path:
                                 here_found.append(variant)
-                                print("Found variant of here:" + variant)
-                                print(
-                                    "path:{}, herepath:{}, common prefix:{}".format(
-                                        path, herepath, os.path.commonprefix([path, herepath])
-                                    )
-                                )
+                                Log.info("Found variant for current path: %s", variant)
+                                Log.debug("path:%s, herepath:%s, common prefix:%s", path, herepath, os.path.commonprefix([path, herepath]))
             if len(here_found) == 0:
-                print("No variants found for here path '" + here + "'")
+                Log.warning("No variants found for path `%s`", here)
             else:
-                print("Variants found at here path '{}': {}".format(here, ", ".join(here_found)))
+                Log.info("Variants found for path `%s`: %s", here, ", ".join(here_found))
 
             if len(here_found):
-                print("Varaints found here: {}")
+                Log.info("Variants found for current path")
 
         if len(run):
-            print("Specified variants: {}".format(", ".join(run)))
+            Log.info("Specified variants: %s", ", ".join(run))
             confs = {}
             for variant in run:
                 if variant in conf_data:
                     confs[variant] = conf_data[variant]
                 else:
-                    print("Variant '{}' not exists in readed conf".format(variant))
+                    Log.warning("Variant `%s` does not exist in loaded config", variant)
         else:
-            print("All the variants")
+            Log.info("Using all variants")
             confs = conf_data
 
         if len(dontrun):
-            print("Skipping variants: {}".format(", ".join(dontrun)))
+            Log.info("Skipping variants: %s", ", ".join(dontrun))
             for variant in dontrun:
                 if variant in confs:
                     del confs[variant]
@@ -131,9 +128,9 @@ def list(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
 
     confs = process_variants(conf_dir, conf, run, dontrun, here)
 
-    print("variants:")
+    Log.info("Variants:")
     if verbose:
-        print(json.dumps(confs, indent=4))
+        Log.info("%s", json.dumps(confs, indent=4))
     else:
         maxlen = 0
         for varname in confs:
@@ -144,12 +141,12 @@ def list(conf_dir, conf, run, dontrun, verbose, here, mainconf=""):
                 description = confs[varname]["description"]
             else:
                 description = "No description available"
-            print(varname + (" " * (maxlen - len(varname))) + ": " + description)
+            Log.info("%s: %s", varname + (" " * (maxlen - len(varname))), description)
 
 
 @cli.command()
 def test():
-    print("test")
+    Log.info("test")
 
 
 @cli.command()
@@ -193,12 +190,12 @@ def backup(conf_dir, conf, run, dontrun, verbose, here, mainconf="", skip_freque
 
     confs = process_variants(conf_dir, conf, run, dontrun, here)
 
-    print("variants to run:")
-    print(json.dumps(confs, indent=4))
+    Log.info("Variants to run:")
+    Log.info("%s", json.dumps(confs, indent=4))
     if confs and len(confs):
         backup_go(confs, verbose=verbose, skip_frequency_check=skip_frequency_check)
     else:
-        print("Where are no variants to run")
+        Log.warning("There are no variants to run")
 
 
 @cli.command()
@@ -241,7 +238,7 @@ def sweep(conf_dir, conf, run, dontrun, verbose, imitate, here, mainconf=""):
 
     confs = process_variants(conf_dir, conf, run, dontrun, here)
 
-    print("variants to sweep:{}".format(len(confs)))
+    Log.info("Variants to sweep: %s", len(confs))
 
     if confs and len(confs):
         sweep_go(confs, verbose, imitate)
