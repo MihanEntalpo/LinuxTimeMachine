@@ -21,7 +21,6 @@ from logging import getLogger
 from subprocess import call, Popen, PIPE, check_output
 
 import pexpect
-from yapsy.PluginManager import PluginManager
 
 from . import exceptions
 from .common import Log
@@ -54,9 +53,8 @@ POSSIBILITY OF SUCH DAMAGE."""
 
 class Plugins:
     def __init__(self):
-        self.manager = PluginManager()
-        self.manager.setPluginPlaces([Tools.get_here_path() + "/plugins"])
-        self.manager.collectPlugins()
+        self.manager = None
+        Log.warning("Plugin subsystem is disabled for modern Python compatibility")
 
 
 class Console:
@@ -144,7 +142,7 @@ class Console:
                     "-maxdepth", "1",
                     "-type", "d",
                     "-regextype", "grep",
-                    "-regex", path + "/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}"
+                    "-regex", path + r"/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}"
                 ]
             ), host
         )
@@ -490,7 +488,7 @@ class Mysql:
                 p.sendline(self.password)
                 p.read(len(self.password) + 1)
                 data = p.read().decode("UTF-8")
-                if re.search("ERROR\ [0-9]+.*?at line [0-9]+:", data):
+                if re.search(r"ERROR [0-9]+.*?at line [0-9]+:", data):
                     raise exceptions.MysqlError("MysqlError: " + data + ", command was: " + cmd)
                 return data
             elif res == "eof":
@@ -557,7 +555,7 @@ class Mysql:
         dbs = {}
 
         for line in checksums.split("\n"):
-            matches = re.match("(?P<name>.*?\..*?)\t(?P<checksum>[0-9]+)", line)
+            matches = re.match(r"(?P<name>.*?\..*?)\t(?P<checksum>[0-9]+)", line)
             if matches:
                 name = matches.groupdict()['name']
                 checksum = int(matches.groupdict()['checksum'])
@@ -649,7 +647,7 @@ class Mysql:
         """
         Log.info("Removing dump from: " + root_folder)
         Console.call_shell(
-            Console.cmd("find '" + root_folder + "' -type f -name *.sql -exec rm_file {} \;", self.sshhost)
+            Console.cmd("find '" + root_folder + "' -type f -name *.sql -exec rm {} \\;", self.sshhost)
         )
         Console.call_shell(
             Console.cmd("find '" + root_folder + "' -type d -empty -delete")
@@ -804,7 +802,7 @@ class Mysql:
 
         result = Console.call_shell_and_return(cmd).decode("UTF-8").split("\n")
         reg = re.compile(
-            "INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# (TABLECHECKSUM:#(?P<TABLECHECKSUM>[^#]+)# )?\ ?FILE:#(?P<FILE>[^#]+)#")
+            r"INFO: -- LTMINFO: TMVERSION:#(?P<TMVERSION>[0-9\.]+)#  DB:#(?P<DB>[^#]+)# TBL:#(?P<TBL>[^#]+)# TABLEUPDATEDATE:#(?P<TABLEUPDATEDATE>[^#]+)# (TABLECHECKSUM:#(?P<TABLECHECKSUM>[^#]+)# )?\ ?FILE:#(?P<FILE>[^#]+)#")
         for line in result:
             matches = reg.search(line)
             if matches:
@@ -947,9 +945,9 @@ class Rsync:
         self.line_parsers = [
             {
                 "type": "progress",
-                "re": "(?P<bytes>[0-9,]+)\s+(?P<progress>[0-9]+)%\s+(?P<speed>[0-9\.]+[MKGTmkgt])B/s\s+" +
-                      "(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\s+" +
-                      "\(xfr#(?P<xfr_num>[0-9]+), ir-chk=(?P<ir_chk_top>[0-9]+)/(?P<ir_chk_bottom>[0-9]+)\)",
+                "re": r"(?P<bytes>[0-9,]+)\s+(?P<progress>[0-9]+)%\s+(?P<speed>[0-9\.]+[MKGTmkgt])B/s\s+" +
+                      r"(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\s+" +
+                      r"\(xfr#(?P<xfr_num>[0-9]+), ir-chk=(?P<ir_chk_top>[0-9]+)/(?P<ir_chk_bottom>[0-9]+)\)",
                 "parser": lambda res: {
                     "time": int(res['second']) + 60 * int(res['minute']) + 3600 * int(res['hour']),
                     "type": "progress",
@@ -963,8 +961,8 @@ class Rsync:
             },
             {
                 "type": "progress",
-                "re": "(?P<bytes>[0-9,]+)\s+(?P<progress>[0-9]+)%\s+(?P<speed>[0-9\.]+[MKGTmkgt])B/s\s+" +
-                      "(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\s+",
+                "re": r"(?P<bytes>[0-9,]+)\s+(?P<progress>[0-9]+)%\s+(?P<speed>[0-9\.]+[MKGTmkgt])B/s\s+" +
+                      r"(?P<time>(?P<hour>[0-9]+):(?P<minute>[0-9]+):(?P<second>[0-9]+))\s+",
                 "parser": lambda res: {
                     "time": int(res['second']) + 60 * int(res['minute']) + 3600 * int(res['hour']),
                     "type": "progress",
@@ -988,8 +986,8 @@ class Rsync:
             },
             {
                 "type": "result_stat",
-                "re": ("sent\ +(?P<sent>[0-9,]+)" +
-                       "\ +bytes\ +received\ +(?P<received>[0-9,]+)\ +bytes\ +(?P<speed>[0-9,\.]+) bytes/sec"),
+                "re": (r"sent\ +(?P<sent>[0-9,]+)" +
+                       r"\ +bytes\ +received\ +(?P<received>[0-9,]+)\ +bytes\ +(?P<speed>[0-9,\.]+) bytes/sec"),
                 "parser": lambda res: {
                     "type": "result_stat",
                     "sent": int(res['sent'].replace(',', "")),
@@ -1326,5 +1324,4 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
             ravenClient().capture_exceptions(e)
 
         Console.print_asterisked("Backup is done, full time is:" + str(summ_time))
-
 

@@ -21,7 +21,7 @@ def sweep(variants, verbose=False, imitate=False):
             sweep_conf = SweepConfList(sweep_params)
 
             if len(sweep_conf.parsed_sweep_conf) == 0:
-                print("Sweep for variant `{}` isn't configured".format(variant_name))
+                Log.warning("Sweep for variant `%s` is not configured", variant_name)
                 continue
 
             dirs = Console.get_backup_dirs_with_dates(
@@ -41,30 +41,25 @@ def sweep(variants, verbose=False, imitate=False):
 
             to_remove_cnt = 0
             for swcl in sweep_conf.parsed_sweep_conf:
-                print(swcl.get_conf_decription())
+                Log.info(swcl.get_conf_decription())
                 if swcl.data_array:
                     swcl.data_array = sorted(swcl.data_array, key=lambda item: item['time_from_now'])
                     to_remove = swcl.sweep_data_items("time_from_now", "to_remove")
                     to_remove_cnt += to_remove
                     if verbose:
-                        print("    Found items:")
+                        Log.info("    Found items:")
                         for i in range(len(swcl.data_array)):
-                            print("        item: {}, {}".format(
-                                swcl.data_array[i]['name'], "REMOVE" if swcl.data_array[i]['to_remove'] else "KEEP"
-                            )
-                            )
+                            Log.info("        item: %s, %s", swcl.data_array[i]["name"], "REMOVE" if swcl.data_array[i]["to_remove"] else "KEEP")
                     else:
-                        print("    Found data items:{}, items to remove:{}, items to stay:{}".format(
-                            len(swcl.data_array), to_remove, len(swcl.data_array) - to_remove)
-                        )
+                        Log.info("    Found data items:%s, items to remove:%s, items to keep:%s", len(swcl.data_array), to_remove, len(swcl.data_array) - to_remove)
                 else:
-                    print("    No data items in this interval")
+                    Log.info("    No data items in this interval")
 
             if to_remove_cnt > 0:
 
                 if not imitate:
 
-                    print("Removing data items...")
+                    Log.info("Removing data items...")
                     removed_cnt = 0
                     for swcl in reversed(sweep_conf.parsed_sweep_conf):
                         for i in reversed(range(len(swcl.data_array))):
@@ -72,12 +67,12 @@ def sweep(variants, verbose=False, imitate=False):
                             if item['to_remove']:
                                 removed_cnt += 1
                                 if verbose:
-                                    print("Removing {} ({} of {})".format(item['name'], removed_cnt, to_remove_cnt))
+                                    Log.info("Removing %s (%s of %s)", item["name"], removed_cnt, to_remove_cnt)
                                 Console.rm_dir(variant["dest"]["path"] + "/" + item['name'], variant["dest"]["host"])
                 else:
-                    print("Not removing data items, caused by --imitate flag")
+                    Log.info("Not removing data items because of --imitate flag")
             else:
-                print("Everything clean, nothing to remove")
+                Log.info("Everything is clean, nothing to remove")
 
 
         except TypeError as e:
@@ -122,7 +117,7 @@ class LastSweepPeriod:
         self.src_string = str_period
         period_matches = {}
         if not Tools.re_match(
-                "^(last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?)|(?P<other>all others?)$",
+                r"^(last\ ((?P<num>[0-9\.]+)\ )?(?P<unit>hour|year|month|day|week)s?)|(?P<other>all others?)$",
                 str_period.strip(),
                 period_matches
         ):
@@ -193,7 +188,7 @@ class SweepInterval:
 
         interval_matches = {}
         if not Tools.re_match(
-                "^(?P<all>all)|((?P<items>[0-9\.]+)\ per\ (?P<num>[0-9\.]+)?\ ?(?P<unit>hour|year|month|day|week)s?)$",
+                r"^(?P<all>all)|((?P<items>[0-9\.]+)\ per\ (?P<num>[0-9\.]+)?\ ?(?P<unit>hour|year|month|day|week)s?)$",
                 str_interval,
                 interval_matches
         ):
