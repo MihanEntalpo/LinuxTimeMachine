@@ -1219,6 +1219,30 @@ class Rsync:
         Console.call_shell(ln_cmd)
 
 
+def run_variant_command(variant_name, command_name, command, host=""):
+    """Run a configured variant hook command locally or on the given SSH host."""
+    if not command:
+        return 0
+
+    full_cmd = Console.cmd(Console.list2cmdline(["/bin/bash", "-c", command]), host)
+    host_label = host if host else "local host"
+    Log.info(
+        "Running %s for variant `%s` on %s: %s",
+        command_name,
+        variant_name,
+        host_label,
+        command
+    )
+    result = Console.call_shell(full_cmd)
+    Log.info(
+        "%s for variant `%s` finished with exit code %s",
+        command_name,
+        variant_name,
+        result
+    )
+    return result
+
+
 def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_frequency_check=False):
     """
     Run backup variants - full backup operation, include files and mysql (if needed) backup.
@@ -1229,7 +1253,9 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
                         "my_home": {
                             "src": {"path":"/home/me", "host":""},
                             "dest": {"path":"/mnt/raid/backup/me_home", "host":"me@backupserver.local"},
-                            "exclude" : ["*.log", "*~", "me/tmp", "me/Music", "me/Torrents"]
+                            "exclude" : ["*.log", "*~", "me/tmp", "me/Music", "me/Torrents"],
+                            "pre_backup_cmd": "systemctl stop app",
+                            "post_backup_cmd": "systemctl start app",
                             "mysqldump" : {
                                 "user" : "root",
                                 "password" : "grE4%0_re^$",
@@ -1250,6 +1276,8 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
     assert (type(variants) in [dict, Odict])
     summ_time = 0
     for variant_name in variants:
+        post_backup_cmd = ""
+        hook_host = ""
         try:
             variant = copy.deepcopy(variants[variant_name])
 
@@ -1258,6 +1286,9 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
             start_time = time.time()
 
             mysqldump = None
+            pre_backup_cmd = variant.pop("pre_backup_cmd", "")
+            post_backup_cmd = variant.pop("post_backup_cmd", "")
+            hook_host = variant.get("src", {}).get("host", "")
 
             if "min_timedelta" in variant:
                 min_timedelta = Tools.make_time_delta(variant["min_timedelta"])
@@ -1276,6 +1307,19 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
                         continue
                 del variant["min_timedelta"]
 
+            if "sweep" in variant:
+                del variant["sweep"]
+
+            if pre_backup_cmd:
+                pre_backup_result = run_variant_command(
+                    variant_name, "pre_backup_cmd", pre_backup_cmd, hook_host
+                )
+                if pre_backup_result != 0:
+                    raise exceptions.PreBackupCommandError(
+                        "pre_backup_cmd for variant `{}` failed with exit code {}".format(
+                            variant_name, pre_backup_result
+                        )
+                    )
             if "mysqldump" in variant:
                 mysqldump = variant['mysqldump']
                 assert (type(mysqldump) == dict)
@@ -1303,9 +1347,6 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
 
                 Console.print_asterisked("Rsync is started for variant `" + variant_name + "`")
 
-            if "sweep" in variant:
-                del variant["sweep"]
-
             rsync = Rsync()
 
             rsync.timemachine(callback=rsync_callback, **variant)
@@ -1319,9 +1360,12 @@ def go(variants, rsync_callback=Rsync.default_callback, verbose=False, skip_freq
             if mysqldump and remove_after_backup:
                 Console.print_asterisked("Remove mysql DB dump after rsync")
                 mysql.remove_dump(mysqldump["folder"])
+            if post_backup_cmd:
+                run_variant_command(
+                    variant_name, "post_backup_cmd", post_backup_cmd, hook_host
+                )
         except exceptions.Base as e:
             Log.error("Backuping of variant `{}` error: {}, skipping".format(variant_name, str(type(e)) + ":" + str(e)))
             ravenClient().capture_exceptions(e)
 
         Console.print_asterisked("Backup is done, full time is:" + str(summ_time))
-
