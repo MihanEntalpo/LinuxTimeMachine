@@ -41,6 +41,10 @@ class RsyncError(Base):
 class ConsoleError(Base):
     pass
 
+
+class PreBackupCommandError(Base):
+    pass
+
 class RemoveFileNotSuccessfull(ConsoleError):
     def __init__(self, filename, sshhost):
         self.filename = filename
