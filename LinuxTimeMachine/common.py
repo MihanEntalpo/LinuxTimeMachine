@@ -22,6 +22,12 @@ class Log:
     def __init__(self, loglevel=logging.DEBUG, logfile=sys.stdout):
         self.logger = logging.getLogger("LinuxTimeMachine")
         self.logger.setLevel(loglevel)
+        self.logger.propagate = False
+
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+            handler.close()
+
         self.logger.addHandler(
             logging.StreamHandler(logfile)
         )
